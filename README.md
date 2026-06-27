@@ -6,10 +6,11 @@ Not just a key-value store. Not just a knowledge graph. A **living memory** that
 
 ## ✨ Features
 
-- **_atomic memory model** — knowledge stored as atoms (facts, decisions, events, preferences, logs, procedures, notes)
+- **_atomic memory model** — knowledge stored as atoms (facts, decisions, events, preferences, logs, procedures, notes, session messages)
 - **multi-factor ranking** — recall combines FTS relevance × confidence × recency × weight (not just BM25)
 - **organic decay** — atoms lose weight over time if not accessed; critical ones get flagged for review
 - **learning engine** — generates questions for the human when it detects contradictions, gaps, weak atoms, or merge candidates
+- **session watcher** — automatically ingests OpenClaw session messages as atoms with TTL (event-driven via inotify/watchdog)
 - **auto-bonding** — creates relationship links between atoms automatically during import
 - **graph traversal** — navigate the knowledge graph with depth control and relation filtering
 - **markdown import** — one-way sync from your existing markdown notes (coexistence, not replacement)
@@ -27,12 +28,17 @@ Not just a key-value store. Not just a knowledge graph. A **living memory** that
                │
 ┌──────────────▼──────────────────────────┐
 │         MCP Server (FastMCP)            │
-│     15 tools (recall, remember, ...)    │
+│     18 tools (recall, remember, ...)    │
 └──────────────┬──────────────────────────┘
                │
 ┌──────────────▼──────────────────────────┐
 │            Engine Layer                  │
 │  ranking · decay · learning · merge     │
+└──────────────┬──────────────────────────┘
+               │
+┌──────────────▼──────────────────────────┐
+│     Session Watcher (watchdog/inotify)  │
+│  monitors OpenClaw session JSONL files  │
 └──────────────┬──────────────────────────┘
                │
 ┌──────────────▼──────────────────────────┐
@@ -43,16 +49,17 @@ Not just a key-value store. Not just a knowledge graph. A **living memory** that
 
 ### Files
 
-| File | Purpose | Lines |
-|---|---|---|
-| `server.py` | MCP server — exposes 15 tools via FastMCP | ~330 |
-| `db.py` | SQLite layer — CRUD, FTS, bonds, versions | ~460 |
-| `engine.py` | Ranking, decay, similarity, gap detection | ~230 |
-| `learning.py` | Question generation (5 trigger types) | ~210 |
-| `importer.py` | Markdown → SQLite one-way importer | ~185 |
-| `schema.sql` | Database schema (atoms, bonds, FTS, versions) | ~120 |
+| File | Purpose |
+|---|---|
+| `server.py` | MCP server — exposes 18 tools via FastMCP |
+| `db.py` | SQLite layer — CRUD, FTS, bonds, versions |
+| `engine.py` | Ranking, decay, similarity, gap detection |
+| `learning.py` | Question generation (5 trigger types) |
+| `importer.py` | Markdown → SQLite one-way importer |
+| `session_watcher.py` | Watchdog-based session JSONL monitor |
+| `schema.sql` | Database schema (atoms, bonds, FTS, versions) |
 
-Total: **~1,600 lines of Python**. No external dependencies beyond `mcp` SDK.
+No external dependencies beyond `mcp` SDK and `watchdog`.
 
 ## 🔧 MCP Tools
 
@@ -73,6 +80,31 @@ Total: **~1,600 lines of Python**. No external dependencies beyond `mcp` SDK.
 | `answer_human` | Answer a pending question |
 | `import_markdown` | Import markdown files (bulk or single) |
 | `export_atom` | Export an atom as markdown |
+| `recall_session` | Recall messages from a specific session |
+| `session_summary` | Get a session overview (message count, time range) |
+| `cleanup_sessions` | Delete expired session atoms (TTL cleanup) |
+
+## 🔍 Session Watcher
+
+The session watcher monitors OpenClaw session JSONL files in real-time:
+
+- **Event-driven** — uses `watchdog`/inotify, near-zero overhead (not polling)
+- **Incremental reads** — tracks file offsets, only processes new lines
+- **Smart filtering** — only captures user/assistant text, skips tool results, system messages, and heartbeat noise
+- **Auto-expiring** — session atoms have a configurable TTL (default 30 days)
+- **Automatic** — starts on server boot, no manual intervention needed
+
+### Configuration
+
+Mount the sessions directory and set the env var:
+
+```yaml
+volumes:
+  - /path/to/openclaw/sessions:/sessions:ro
+environment:
+  - OPENCLAW_SESSIONS_DIR=/sessions
+  - SESSION_TTL_DAYS=30
+```
 
 ## 🚀 Quick Start
 
@@ -89,11 +121,16 @@ services:
     volumes:
       - memory-data:/data
       - ./your-markdown-notes:/workspace/memory:ro
+      # Optional: OpenClaw sessions for session watcher
+      - /path/to/openclaw/sessions:/sessions:ro
     environment:
       - MEMORY_DB_PATH=/data/memory.db
       - MARKDOWN_SOURCE=/workspace/memory
       - MEMORY_HOST=0.0.0.0
       - MEMORY_PORT=8085
+      # Optional: session watcher
+      - OPENCLAW_SESSIONS_DIR=/sessions
+      - SESSION_TTL_DAYS=30
 
 volumes:
   memory-data:
@@ -126,6 +163,7 @@ Add to your MCP client config (e.g., Claude Desktop, OpenClaw, etc.):
 ## 📊 Use Cases
 
 - **Personal AI assistant memory** — remember preferences, decisions, project context across sessions
+- **Session continuity** — automatically capture conversation context, never lose where you left off
 - **Team knowledge base** — shared memory accessible to AI agents
 - **Project documentation** — import existing markdown docs, query them naturally
 - **Learning journal** — track decisions and their rationale over time
@@ -139,21 +177,8 @@ Edit `config.json` to tune:
 | `decay` | Interval, decay factor, critical threshold, archive timeout |
 | `ranking` | Weight of FTS score, confidence, recency, and atom weight |
 | `learning` | Thresholds for contradiction, merge similarity, gap detection |
-
-## 🧬 How It Differs
-
-| Feature | memory-graph | sqlite-memory-mcp | **Memory Engine** |
-|---|---|---|---|
-| Storage | SQLite | SQLite | SQLite |
-| FTS search | ❌ | ✅ (BM25) | ✅ (multi-factor) |
-| Decay | ❌ | ❌ | ✅ |
-| Learning/Q&A | ❌ | ❌ | ✅ |
-| Markdown import | ❌ | ❌ | ✅ |
-| Auto-bonding | ❌ | ❌ | ✅ |
-| Graph traversal | Basic | ❌ | ✅ (depth + relation filter) |
-| Merge atoms | ❌ | ❌ | ✅ |
-| TTL | ❌ | ❌ | ✅ |
-| Versioning | ❌ | ❌ | ✅ |
+| `sessions_dir` | Path to OpenClaw sessions directory |
+| `session_ttl_days` | TTL for session message atoms (default 30) |
 
 ## 📝 License
 
