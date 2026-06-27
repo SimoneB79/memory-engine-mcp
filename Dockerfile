@@ -1,8 +1,7 @@
 FROM python:3.12-slim
 
-LABEL org.opencontainers.image.title="Memory Engine"
-LABEL org.opencontainers.image.description="MCP Server for dynamic AI memory with decay, learning, and knowledge graph"
-LABEL org.opencontainers.image.license="MIT"
+LABEL maintainer="Simone AI"
+LABEL description="Memory Engine — MCP Server for dynamic AI memory"
 
 WORKDIR /app
 
@@ -21,6 +20,7 @@ COPY db.py .
 COPY engine.py .
 COPY learning.py .
 COPY importer.py .
+COPY session_watcher.py .
 COPY server.py .
 COPY config.json .
 
@@ -28,11 +28,14 @@ COPY config.json .
 VOLUME /data
 
 # Markdown workspace (mount read-only)
+# OpenClaw sessions (mount for watcher)
+VOLUME /sessions
+
 VOLUME /workspace
 
-EXPOSE 8085
+EXPOSE 8087
 
 HEALTHCHECK --interval=60s --timeout=5s --retries=3 \
-    CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:8085/sse', timeout=3)" || exit 0
+    CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:8087/sse', timeout=3)" || exit 0
 
 CMD ["python3", "server.py"]

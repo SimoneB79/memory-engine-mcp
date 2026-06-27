@@ -16,6 +16,7 @@ from db import DB
 from engine import Engine
 from learning import Learning
 from importer import MarkdownImporter
+from session_watcher import SessionWatcher
 
 # ─── Config ──────────────────────────────────────────────────
 
@@ -25,7 +26,17 @@ config = json.loads(CONFIG_PATH.read_text())
 DB_PATH = os.environ.get("MEMORY_DB_PATH", config.get("db_path", "/data/memory.db"))
 MD_SOURCE = os.environ.get("MARKDOWN_SOURCE", config.get("markdown_source", "/workspace/memory"))
 HOST = os.environ.get("MEMORY_HOST", config.get("server", {}).get("host", "0.0.0.0"))
-PORT = int(os.environ.get("MEMORY_PORT", config.get("server", {}).get("port", 8085)))
+PORT = int(os.environ.get("MEMORY_PORT", config.get("server", {}).get("port", 8087)))
+
+# Session watcher config
+SESSIONS_DIR = os.environ.get(
+    "OPENCLAW_SESSIONS_DIR",
+    config.get("sessions_dir", "/home/node/.openclaw/agents/main/sessions"),
+)
+SESSION_TTL_DAYS = int(os.environ.get(
+    "SESSION_TTL_DAYS",
+    config.get("session_ttl_days", 30),
+))
 
 # ─── Init ────────────────────────────────────────────────────
 
@@ -36,6 +47,14 @@ db = DB(DB_PATH)
 engine = Engine(db, config)
 learning = Learning(db, engine, config)
 importer = MarkdownImporter(db, MD_SOURCE)
+
+# Start session watcher (background, watchdog-based)
+session_watcher = SessionWatcher(
+    db=db,
+    sessions_dir=SESSIONS_DIR,
+    ttl_days=SESSION_TTL_DAYS,
+)
+session_watcher.start()
 
 # ─── MCP Server ──────────────────────────────────────────────
 
@@ -323,10 +342,83 @@ def list_atoms(
     return json.dumps(slim, ensure_ascii=False, indent=2)
 
 
+@mcp.tool()
+def recall_session(session_id: str, query: str, limit: int = 10) -> str:
+    """
+    Recall messages from a specific OpenClaw session.
+    Searches within session_msg atoms for the given session.
+    
+    Args:
+        session_id: Session ID (filename without .jsonl)
+        query: Search query to filter messages
+        limit: Max results
+    """
+    results = engine.recall(
+        query,
+        limit=limit,
+        domain=f"session/{session_id}",
+    )
+    return json.dumps(results, ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
+def cleanup_sessions() -> str:
+    """
+    Delete expired session atoms (TTL passed).
+    Safe to call anytime — only removes atoms past their TTL.
+    """
+    count = session_watcher.cleanup_expired()
+    return json.dumps({"status": "ok", "expired_atoms_removed": count})
+
+
+@mcp.tool()
+def session_summary(session_id: str) -> str:
+    """
+    Get a summary of a session: message count, time range, topics.
+    Useful for quickly understanding what was discussed.
+    
+    Args:
+        session_id: Session ID (filename without .jsonl)
+    """
+    atoms = db.list_atoms(
+        domain=f"session/{session_id}",
+        type="session_msg",
+        status="active",
+        limit=500,
+        order_by="created_at",
+    )
+    if not atoms:
+        return json.dumps({"error": f"No session atoms found for '{session_id}'"})
+    
+    user_msgs = [a for a in atoms if "[user]" in a["title"]]
+    asst_msgs = [a for a in atoms if "[assistant]" in a["title"]]
+    
+    first_ts = atoms[0].get("created_at", 0)
+    last_ts = atoms[-1].get("created_at", 0)
+    
+    return json.dumps({
+        "session_id": session_id,
+        "total_messages": len(atoms),
+        "user_messages": len(user_msgs),
+        "assistant_messages": len(asst_msgs),
+        "time_range": {
+            "start": time.strftime("%Y-%m-%d %H:%M", time.localtime(first_ts)),
+            "end": time.strftime("%Y-%m-%d %H:%M", time.localtime(last_ts)),
+        },
+        "first_messages": [
+            a["title"] for a in atoms[:5]
+        ],
+    }, ensure_ascii=False, indent=2)
+
+
 # ─── Main ────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     print(f"🧠 Memory Engine starting on {HOST}:{PORT}")
     print(f"   DB: {DB_PATH}")
     print(f"   Markdown source: {MD_SOURCE}")
-    mcp.run(transport="sse")
+    print(f"   Sessions dir: {SESSIONS_DIR} (TTL={SESSION_TTL_DAYS}d)")
+    try:
+        mcp.run(transport="sse")
+    finally:
+        session_watcher.stop()
