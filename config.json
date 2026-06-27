@@ -1,0 +1,30 @@
+{
+    "db_path": "/data/memory.db",
+    "markdown_source": "/workspace/memory",
+    "decay": {
+        "enabled": true,
+        "interval_days": 30,
+        "factor": 0.95,
+        "critical_threshold": 0.15,
+        "archive_after_days": 180
+    },
+    "ranking": {
+        "fts_weight": 0.40,
+        "confidence_weight": 0.25,
+        "recency_weight": 0.20,
+        "weight_factor": 0.15
+    },
+    "learning": {
+        "contradiction_threshold": 0.7,
+        "merge_similarity_threshold": 0.85,
+        "weak_confidence_threshold": 0.4,
+        "weak_access_threshold": 5,
+        "decay_critical_threshold": 0.15,
+        "gap_body_min_chars": 50,
+        "max_pending_questions": 20
+    },
+    "server": {
+        "host": "0.0.0.0",
+        "port": 8085
+    }
+}

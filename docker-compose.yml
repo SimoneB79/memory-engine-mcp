@@ -1,0 +1,24 @@
+version: "3.8"
+
+services:
+  memory-engine:
+    build: .
+    container_name: memory-engine
+    restart: unless-stopped
+    expose:
+      - "8085"
+    volumes:
+      # Persistent SQLite storage
+      - memory-data:/data
+      # Read-only markdown source (optional — for one-way import)
+      - ./your-notes:/workspace/memory:ro
+    environment:
+      - MEMORY_DB_PATH=/data/memory.db
+      - MARKDOWN_SOURCE=/workspace/memory
+      - MEMORY_HOST=0.0.0.0
+      - MEMORY_PORT=8085
+    networks:
+      - default
+
+volumes:
+  memory-data:
