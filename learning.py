@@ -207,7 +207,7 @@ class Learning:
                 with self.db.conn() as c:
                     atom = c.execute("SELECT body FROM atoms WHERE id = ?", (aid,)).fetchone()
                     if atom:
-                        new_body = (atom["body"] or "") + f"\n\n[Human补充]: {answer}"
+                        new_body = (atom["body"] or "") + f"\n\n[Human note]: {answer}"
                         c.execute("UPDATE atoms SET body = ?, updated_at = ? WHERE id = ?",
                                   (new_body, int(__import__("time").time()), aid))
 
