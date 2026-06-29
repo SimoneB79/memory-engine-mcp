@@ -448,6 +448,53 @@ def session_summary(session_id: str) -> str:
     }, ensure_ascii=False, indent=2)
 
 
+@mcp.tool()
+def cleanup_duplicates() -> str:
+    """
+    Remove duplicate session_msg atoms.
+
+    Keeps atoms with a content_hash (v2 watcher) and removes older
+    duplicates without one (v1 watcher artifacts). Also removes any
+    remaining exact-duplicate pairs by content_hash, keeping the oldest.
+
+    Returns a summary of what was removed.
+    """
+    removed = {"no_hash": 0, "exact_dupes": 0}
+
+    with db.conn() as c:
+        # 1. Remove session_msg atoms without content_hash (v1 leftovers)
+        cur = c.execute(
+            "DELETE FROM atoms WHERE type = 'session_msg' AND content_hash IS NULL"
+        )
+        removed["no_hash"] = cur.rowcount
+
+        # 2. Remove exact duplicates by content_hash — keep the oldest (min rowid)
+        dupes = c.execute(
+            """SELECT content_hash, COUNT(*) as n, MIN(rowid) as keep_rowid
+               FROM atoms
+               WHERE type = 'session_msg' AND content_hash IS NOT NULL
+               GROUP BY content_hash
+               HAVING n > 1"""
+        ).fetchall()
+
+        for row in dupes:
+            c.execute(
+                """DELETE FROM atoms
+                   WHERE content_hash = ? AND rowid != ?
+                     AND type = 'session_msg'""",
+                (row["content_hash"], row["keep_rowid"]),
+            )
+            removed["exact_dupes"] += (row["n"] - 1)
+
+    total = removed["no_hash"] + removed["exact_dupes"]
+    return json.dumps({
+        "status": "ok",
+        "removed_no_hash": removed["no_hash"],
+        "removed_exact_dupes": removed["exact_dupes"],
+        "total_removed": total,
+    }, ensure_ascii=False, indent=2)
+
+
 # ─── Main ────────────────────────────────────────────────────
 
 if __name__ == "__main__":
