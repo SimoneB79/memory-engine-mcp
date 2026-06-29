@@ -9,6 +9,10 @@
   Not just a key-value store. Not just a knowledge graph. A <strong>living memory</strong> that decays, learns, and evolves with your AI.
 </p>
 
+<p align="center">
+  <strong>Works with:</strong> Claude Code · Claude Desktop · Cursor · Cline · Windsurf · OpenClaw · Any MCP client
+</p>
+
 ---
 
 ## ✨ Features
@@ -258,6 +262,7 @@ See [`mcp.json`](mcp.json) for a ready-to-use example.
 
 ## 📊 Use Cases
 
+- **Developer tools memory** — persistent context for coding assistants (Claude Code, Cursor, Cline, Windsurf): remember project decisions, architecture choices, and coding preferences across sessions
 - **Personal AI assistant memory** — remember preferences, decisions, project context across sessions
 - **Session continuity** — automatically capture conversation context, never lose where you left off
 - **Team knowledge base** — shared memory accessible to AI agents
