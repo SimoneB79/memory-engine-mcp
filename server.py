@@ -13,6 +13,10 @@ from mcp.server.fastmcp import FastMCP
 # Add project dir to path
 sys.path.insert(0, str(Path(__file__).parent))
 
+# ─── Version ────────────────────────────────────────────────
+
+__version__ = "1.1.0"
+
 from db import DB
 from engine import Engine
 from learning import Learning
@@ -320,6 +324,7 @@ def stats() -> str:
     breakdown by domain and type, average weight, low-confidence count.
     """
     s = db.stats()
+    s["version"] = __version__
     return json.dumps(s, ensure_ascii=False, indent=2)
 
 
@@ -495,10 +500,22 @@ def cleanup_duplicates() -> str:
     }, ensure_ascii=False, indent=2)
 
 
+@mcp.tool()
+def version() -> str:
+    """
+    Get the Memory Engine server version.
+    """
+    return json.dumps({
+        "version": __version__,
+        "python": sys.version.split()[0],
+        "db_path": DB_PATH,
+    }, ensure_ascii=False, indent=2)
+
+
 # ─── Main ────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    print(f"🧠 Memory Engine starting on {HOST}:{PORT}")
+    print(f"🧠 Memory Engine v{__version__} starting on {HOST}:{PORT}")
     print(f"   DB: {DB_PATH}")
     print(f"   Markdown source: {MD_SOURCE}")
     print(f"   Sessions dir: {SESSIONS_DIR} (TTL={SESSION_TTL_DAYS}d)")
