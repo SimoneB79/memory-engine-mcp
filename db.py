@@ -22,9 +22,11 @@ class DB:
 
     @contextmanager
     def conn(self):
-        c = sqlite3.connect(self.db_path)
+        c = sqlite3.connect(self.db_path, timeout=10)
         c.row_factory = sqlite3.Row
         c.execute("PRAGMA foreign_keys = ON")
+        c.execute("PRAGMA journal_mode = WAL")
+        c.execute("PRAGMA busy_timeout = 5000")
         try:
             yield c
             c.commit()
@@ -38,6 +40,28 @@ class DB:
         schema = SCHEMA_PATH.read_text()
         with self.conn() as c:
             c.executescript(schema)
+        # Migrations: add columns introduced after initial release
+        self._migrate()
+
+    # ─── MIGRATIONS ──────────────────────────────────────────
+
+    def _migrate(self):
+        """Add columns introduced after the initial release (idempotent)."""
+        migrations = [
+            ("content_hash", "TEXT"),
+        ]
+        with self.conn() as c:
+            for col, coltype in migrations:
+                # Check if column exists
+                cols = [r[1] for r in c.execute("PRAGMA table_info(atoms)").fetchall()]
+                if col not in cols:
+                    c.execute(f"ALTER TABLE atoms ADD COLUMN {col} {coltype}")
+                    logger_obj = __import__('logging').getLogger('db')
+                    logger_obj.info("Migration: added column atoms.%s", col)
+            # Index on content_hash for fast dedup
+            c.execute(
+                "CREATE INDEX IF NOT EXISTS idx_atoms_content_hash ON atoms(content_hash)"
+            )
 
     # ─── ATOMS ───────────────────────────────────────────────
 
@@ -54,6 +78,7 @@ class DB:
         ttl: int | None = None,
         meta: dict | None = None,
         atom_id: str | None = None,
+        content_hash: str | None = None,
     ) -> dict:
         atom_id = atom_id or self._slug(title) or str(uuid.uuid4())[:8]
         tags_json = json.dumps(tags or [])
@@ -69,10 +94,10 @@ class DB:
             c.execute(
                 """INSERT INTO atoms 
                    (id, type, domain, title, body, confidence, source, source_path, 
-                    ttl, tags, meta, created_at, updated_at, accessed_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    ttl, tags, meta, created_at, updated_at, accessed_at, content_hash)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (atom_id, type, domain, title, body, confidence, source, source_path,
-                 ttl, tags_json, meta_json, now, now, now),
+                 ttl, tags_json, meta_json, now, now, now, content_hash),
             )
             # Save initial version
             c.execute(

@@ -1,5 +1,5 @@
 -- Memory Engine — SQLite Schema
--- Version: 1.0
+-- Version: 1.1 (2026-06-29 — added session_offsets, content_hash)
 -- Created: 2026-06-27
 
 PRAGMA journal_mode = WAL;
@@ -27,6 +27,15 @@ CREATE TABLE IF NOT EXISTS atoms (
     ttl           INTEGER,                     -- NULL = permanent, otherwise epoch expiry
     tags          TEXT DEFAULT '[]',           -- JSON array
     meta          TEXT DEFAULT '{}'            -- JSON object for extensions
+);
+
+-- ============================================================
+-- SESSION OFFSETS: persistent read positions for JSONL files
+-- ============================================================
+CREATE TABLE IF NOT EXISTS session_offsets (
+    filename      TEXT PRIMARY KEY,            -- e.g. "abc123.jsonl"
+    offset        INTEGER NOT NULL DEFAULT 0,  -- last byte offset read
+    updated_at    INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
 -- ============================================================

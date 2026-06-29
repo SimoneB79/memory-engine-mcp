@@ -1,4 +1,11 @@
 <p align="center">
+  <a href="#"><img alt="Version" src="https://img.shields.io/badge/version-1.1.0-blue" /></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green" /></a>
+  <a href="#"><img alt="Python" src="https://img.shields.io/badge/python-3.11+-blue" /></a>
+  <a href="CHANGELOG.md"><img alt="Changelog" src="https://img.shields.io/badge/changelog-📝-orange" /></a>
+</p>
+
+<p align="center">
   <img src="docs/logo.jpg" width="128" height="128" alt="Memory Engine Logo" />
 </p>
 
@@ -184,15 +191,18 @@ ask_pending(limit=5)
 
 The session watcher monitors OpenClaw session JSONL files in real-time:
 
-- **Event-driven** — uses `watchdog`/inotify, near-zero overhead (not polling)
-- **Incremental reads** — tracks file offsets, only processes new lines
-- **Smart filtering** — only captures user/assistant text, skips tool results, system messages, and heartbeat noise
-- **Auto-expiring** — session atoms have a configurable TTL (default 30 days)
+- **Event-driven** — uses `watchdog`/inotify + **polling fallback** (every 30s) for reliability on Docker overlayfs
+- **Persistent offsets** — read positions stored in SQLite, survive container restarts
+- **Deduplication** — `content_hash` on every atom prevents duplicates on rescan or restart
+- **Markdown digests** — lightweight `.md` summary per session, survives JSONL deletion
+- **Smart filtering** — only captures user/assistant text; skips tool results, system messages, heartbeat noise, and system sessions (cron, MQTT, isolated)
+- **Truncation detection** — if a JSONL file shrinks (rotation/truncation), offset resets automatically
+- **Auto-expiring** — session atoms have a configurable TTL (default 30 days); a background thread cleans up expired atoms, digests, and stale offsets every 60 minutes
 - **Automatic** — starts on server boot, no manual intervention needed
 
 ### Configuration
 
-Mount the sessions directory and set the env var:
+Mount the sessions directory and set the env vars:
 
 ```yaml
 volumes:
@@ -200,6 +210,18 @@ volumes:
 environment:
   - OPENCLAW_SESSIONS_DIR=/sessions
   - SESSION_TTL_DAYS=30
+  - SESSION_DIGEST_DIR=/data/session_digests
+  - SESSION_POLL_INTERVAL=30
+```
+
+Advanced filtering in `config.json`:
+
+```json
+{
+  "session_exclude_patterns": ["cron:", "mqtt", "heartbeat", "isolated"],
+  "session_max_content_chars": 2000,
+  "session_cleanup_interval_minutes": 60
+}
 ```
 
 ## 🚀 Quick Start
@@ -280,6 +302,11 @@ Edit `config.json` to tune:
 | `learning` | Thresholds for contradiction, merge similarity, gap detection |
 | `sessions_dir` | Path to OpenClaw sessions directory |
 | `session_ttl_days` | TTL for session message atoms (default 30) |
+| `session_poll_interval` | Polling fallback interval in seconds (default 30) |
+| `session_digest_dir` | Directory for markdown session digests |
+| `session_exclude_patterns` | Session ID patterns to skip (cron, mqtt, etc.) |
+| `session_max_content_chars` | Max chars per session atom before truncation |
+| `session_cleanup_interval_minutes` | TTL cleanup loop interval (default 60) |
 
 ## 🧬 How It Differs
 

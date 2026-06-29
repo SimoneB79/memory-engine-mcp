@@ -27,6 +27,11 @@
         "host": "0.0.0.0",
         "port": 8085
     },
-    "sessions_dir": "/home/node/.openclaw/agents/main/sessions",
-    "session_ttl_days": 30
+    "sessions_dir": "/sessions",
+    "session_ttl_days": 30,
+    "session_poll_interval": 30,
+    "session_digest_dir": "/data/session_digests",
+    "session_exclude_patterns": ["cron:", "mqtt", "heartbeat", "isolated"],
+    "session_max_content_chars": 2000,
+    "session_cleanup_interval_minutes": 60
 }

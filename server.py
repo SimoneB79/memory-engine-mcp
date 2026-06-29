@@ -6,6 +6,7 @@ import json
 import os
 import sys
 import time
+import threading
 from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
@@ -37,6 +38,23 @@ SESSION_TTL_DAYS = int(os.environ.get(
     "SESSION_TTL_DAYS",
     config.get("session_ttl_days", 30),
 ))
+SESSION_POLL_INTERVAL = int(os.environ.get(
+    "SESSION_POLL_INTERVAL",
+    config.get("session_poll_interval", 30),
+))
+SESSION_DIGEST_DIR = os.environ.get(
+    "SESSION_DIGEST_DIR",
+    config.get("session_digest_dir", "/data/session_digests"),
+)
+SESSION_EXCLUDE_PATTERNS = config.get("session_exclude_patterns", ["cron:", "mqtt", "heartbeat"])
+SESSION_MAX_CONTENT = int(os.environ.get(
+    "SESSION_MAX_CONTENT_CHARS",
+    config.get("session_max_content_chars", 2000),
+))
+SESSION_CLEANUP_INTERVAL = int(os.environ.get(
+    "SESSION_CLEANUP_INTERVAL_MINUTES",
+    config.get("session_cleanup_interval_minutes", 60),
+))
 
 # ─── Init ────────────────────────────────────────────────────
 
@@ -48,13 +66,32 @@ engine = Engine(db, config)
 learning = Learning(db, engine, config)
 importer = MarkdownImporter(db, MD_SOURCE)
 
-# Start session watcher (background, watchdog-based)
+# Start session watcher (background, watchdog + polling)
 session_watcher = SessionWatcher(
     db=db,
     sessions_dir=SESSIONS_DIR,
     ttl_days=SESSION_TTL_DAYS,
+    poll_interval=SESSION_POLL_INTERVAL,
+    digest_dir=SESSION_DIGEST_DIR,
+    exclude_patterns=SESSION_EXCLUDE_PATTERNS,
+    max_content_chars=SESSION_MAX_CONTENT,
 )
 session_watcher.start()
+
+# ─── Periodic TTL cleanup thread ─────────────────────────────
+
+def _ttl_cleanup_loop():
+    """Background thread: run session atom + digest cleanup periodically."""
+    interval = SESSION_CLEANUP_INTERVAL * 60
+    while True:
+        time.sleep(interval)
+        try:
+            session_watcher.cleanup_expired()
+        except Exception as e:
+            print(f"[ttl_cleanup] error: {e}", file=sys.stderr)
+
+_cleanup_thread = threading.Thread(target=_ttl_cleanup_loop, daemon=True)
+_cleanup_thread.start()
 
 # ─── MCP Server ──────────────────────────────────────────────
 
