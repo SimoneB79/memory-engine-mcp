@@ -1,8 +1,7 @@
 <p align="center">
-  <a href="#"><img alt="Version" src="https://img.shields.io/badge/version-1.1.0-blue" /></a>
+  <a href="#"><img alt="Version" src="https://img.shields.io/badge/version-1.2.0-blue" /></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green" /></a>
-  <a href="#"><img alt="Python" src="https://img.shields.io/badge/python-3.11+-blue" /></a>
-  <a href="CHANGELOG.md"><img alt="Changelog" src="https://img.shields.io/badge/changelog-📝-orange" /></a>
+  <a href="#"><img alt="Python" src="https://img.shields.io/badge/python-3.12+-blue" /></a>
 </p>
 
 <p align="center">
@@ -24,73 +23,92 @@
 
 ## ✨ Features
 
-- **Atomic memory model** — knowledge stored as atoms (facts, decisions, events, preferences, logs, procedures, notes, session messages)
-- **Multi-factor ranking** — recall combines FTS relevance × confidence × recency × weight (not just BM25)
+### Core Memory
+- **Atomic memory model** — knowledge stored as atoms (facts, decisions, events, preferences, logs, procedures, notes, session messages, session digests)
+- **Hybrid ranking** — recall combines FTS relevance × **semantic similarity** × confidence × recency × weight
+- **Semantic search** — local embeddings via Ollama (`nomic-embed-text`) for meaning-based recall, not just keyword match
 - **Organic decay** — atoms lose weight over time if not accessed; critical ones get flagged for review
 - **Learning engine** — generates questions for the human when it detects contradictions, gaps, weak atoms, or merge candidates
-- **Session watcher** — automatically ingests OpenClaw session messages as atoms with TTL (event-driven via inotify/watchdog)
-- **Auto-bonding** — creates relationship links between atoms automatically during import
 - **Graph traversal** — navigate the knowledge graph with depth control and relation filtering
 - **Markdown import** — one-way sync from your existing markdown notes (coexistence, not replacement)
 - **Merge & deduplicate** — consolidate similar atoms intelligently
 - **TTL support** — atoms that expire automatically
 - **Versioning** — automatic atom history tracking
 
+### Auto-Bonding
+- **Rule-based bonding** — automatically creates relationships between atoms using domain clustering, keyword overlap, and pattern detection
+- **Semantic suggestions** — uses embeddings to find non-obvious connections between atoms
+- **Bulk operations** — scan all atoms and suggest/create bonds in batch
+- **8 relation types** — `is_a`, `part_of`, `depends_on`, `contradicts`, `refines`, `derived_from`, `detail_of`, `related_to`
+
+### Session Watcher v2.1
+- **Real-time ingestion** — monitors OpenClaw session JSONL files via watchdog/inotify + polling fallback
+- **Session digests** — automatically creates permanent summary atoms when sessions go inactive (after 30 min)
+- **Two-tier lifecycle** — raw session messages (7-day TTL) → permanent session digests → human daily logs
+- **Persistent offsets** — read positions stored in SQLite, survive container restarts
+- **Deduplication** — `content_hash` prevents duplicates on rescan or restart
+- **Smart filtering** — skips tool results, system messages, heartbeat noise, and system sessions
+
 ## 🏗️ Architecture
 
 ```
-┌─────────────────────────────────────────┐
-│           Your AI Assistant              │
-│         (via MCP Protocol)              │
-└──────────────┬──────────────────────────┘
-               │
-┌──────────────▼──────────────────────────┐
-│         MCP Server (FastMCP)            │
-│     18 tools (recall, remember, ...)    │
-└──────────────┬──────────────────────────┘
-               │
-┌──────────────▼──────────────────────────┐
-│            Engine Layer                  │
-│  ranking · decay · learning · merge     │
-└──────────────┬──────────────────────────┘
-               │
-┌──────────────▼──────────────────────────┐
-│     Session Watcher (watchdog/inotify)  │
-│  monitors OpenClaw session JSONL files  │
-└──────────────┬──────────────────────────┘
-               │
-┌──────────────▼──────────────────────────┐
-│          SQLite (FTS5 + JSON1)          │
-│     atoms · bonds · versions · Q&A      │
-└─────────────────────────────────────────┘
+┌─────────────────────────────────────────────┐
+│            Your AI Assistant                 │
+│          (via MCP Protocol)                 │
+└────────────────┬────────────────────────────┘
+                 │
+┌────────────────▼────────────────────────────┐
+│          MCP Server (FastMCP)               │
+│      24 tools (recall, remember, ...)       │
+└────────────────┬────────────────────────────┘
+                 │
+┌────────────────▼────────────────────────────┐
+│             Engine Layer                     │
+│  hybrid ranking · decay · learning · merge  │
+│  auto-bond · embeddings (Ollama)            │
+└────────────────┬────────────────────────────┘
+                 │
+┌────────────────▼────────────────────────────┐
+│    Session Watcher v2.1 (watchdog/inotify)  │
+│  session JSONL → atoms + auto-digests       │
+└────────────────┬────────────────────────────┘
+                 │
+┌────────────────▼────────────────────────────┐
+│          SQLite (FTS5 + JSON1)              │
+│  atoms · bonds · versions · embeddings · Q&A│
+└─────────────────────────────────────────────┘
 ```
 
 ### Files
 
 | File | Purpose |
 |---|---|
-| `server.py` | MCP server — exposes 18 tools via FastMCP |
-| `db.py` | SQLite layer — CRUD, FTS, bonds, versions |
-| `engine.py` | Ranking, decay, similarity, gap detection |
+| `server.py` | MCP server — exposes 24 tools via FastMCP |
+| `db.py` | SQLite layer — CRUD, FTS, bonds, versions, embeddings |
+| `engine.py` | Hybrid ranking (BM25 + semantic), decay, similarity, gap detection |
+| `embeddings.py` | Local embedding generation via Ollama (`nomic-embed-text`) |
+| `auto_bond.py` | Rule-based + semantic auto-bonding engine |
 | `learning.py` | Question generation (5 trigger types) |
+| `session_watcher.py` | Watchdog-based session JSONL monitor with auto-digest |
 | `importer.py` | Markdown → SQLite one-way importer |
-| `session_watcher.py` | Watchdog-based session JSONL monitor |
-| `schema.sql` | Database schema (atoms, bonds, FTS, versions) |
+| `schema.sql` | Database schema (atoms, bonds, FTS, versions, embeddings, offsets) |
 
-**~1,800 lines of Python.** Dependencies: `mcp` SDK + `watchdog`.
+**~3,500 lines of Python.** Dependencies: `mcp` SDK, `watchdog`, `requests`.
 
-## 🔧 MCP Tools (18)
+## 🔧 MCP Tools (24)
 
 ### Memory Operations
 
 | Tool | Description |
 |---|---|
 | `remember` | Create or update an atom |
-| `recall` | Smart query (FTS × confidence × recency × weight) |
+| `recall` | Smart query (FTS × semantic × confidence × recency × weight) |
+| `semantic_search` | Pure semantic search via Ollama embeddings |
 | `get_atom` | Get full atom details with all bonds |
 | `list_atoms` | List atoms with filters (domain, type, status) |
 | `merge_atoms` | Merge two atoms (secondary → primary) |
 | `export_atom` | Export an atom as markdown |
+| `find_similar` | Find atoms semantically similar to a given atom |
 
 ### Knowledge Graph
 
@@ -99,6 +117,8 @@
 | `link` | Create a typed bond between atoms |
 | `unlink` | Remove a bond |
 | `search_graph` | Traverse the knowledge graph from an atom |
+| `suggest_bonds` | Suggest bonds for an atom (rule-based + semantic) |
+| `suggest_bonds_all` | Scan all atoms and suggest/create bonds in bulk |
 
 ### Session Management
 
@@ -107,12 +127,15 @@
 | `recall_session` | Search messages within a specific session |
 | `session_summary` | Get session overview (message count, time range) |
 | `cleanup_sessions` | Delete expired session atoms (TTL cleanup) |
+| `cleanup_duplicates` | Remove duplicate session_msg atoms |
+| `reindex_embeddings` | Regenerate embeddings for all atoms |
 
 ### System & Learning
 
 | Tool | Description |
 |---|---|
 | `stats` | Memory statistics (counts, domains, types) |
+| `version` | Get server version |
 | `decay_run` | Execute decay cycle (reduce unused atom weights) |
 | `learning_run` | Run learning engine (detect gaps, contradictions) |
 | `ask_pending` | Get pending human questions |
@@ -126,7 +149,7 @@
 ```python
 remember(
     title="Switched from npm to pnpm",
-    body="Faster installs, better monorepo support. Migration completed 2026-06-15.",
+    body="Faster installs, better monorepo support.",
     type="decision",
     domain="project:frontend",
     confidence=0.9,
@@ -134,22 +157,28 @@ remember(
 )
 ```
 
-### Recall relevant context
+### Recall with hybrid ranking
 
 ```python
 recall(query="frontend build tool choice", limit=5)
-# Returns ranked results combining FTS match, confidence, recency, and weight
+# Combines FTS match, semantic similarity, confidence, recency, and weight
 ```
 
-### Link related concepts
+### Pure semantic search
 
 ```python
-link(
-    from_id="switched_from_npm_to_pnpm",
-    to_id="monorepo_setup",
-    relation="depends_on",
-    strength=0.8
-)
+semantic_search(query="how to deploy the app", limit=5)
+# Uses Ollama embeddings — finds by meaning, not just keywords
+```
+
+### Auto-suggest bonds
+
+```python
+suggest_bonds(atom_id="my_atom_id", auto_apply=False)
+# Returns rule-based + semantic bond suggestions
+
+suggest_bonds_all(auto_apply=True, max_atoms=30)
+# Scans all active atoms and creates bonds automatically
 ```
 
 ### Search within a session
@@ -162,65 +191,67 @@ recall_session(
 )
 ```
 
-### Get a session summary
+## 🔍 Session Watcher v2.1
 
-```python
-session_summary(session_id="abc123-def456")
-# Returns: message count, user/assistant breakdown, time range, first topics
-```
+The session watcher monitors OpenClaw session JSONL files with a **two-tier lifecycle**:
 
-### Import existing markdown notes
+1. **Raw messages** (`session_msg` atoms, TTL 7 days) — ingested in real-time with dedup
+2. **Session digests** (`session_digest` atoms, permanent) — auto-created after 30 min of inactivity, extracting user messages
+3. **Daily logs** (human-written markdown) — primary high-quality summary
 
-```python
-import_markdown()  # Bulk import all markdown files
-import_markdown(filepath="/notes/project-decisions.md")  # Single file
-```
+This ensures continuity: if a session is lost, the digest provides context without searching thousands of raw messages.
 
-### Run the learning engine
+### Features
 
-```python
-learning_run()
-# Detects: contradictions, weak atoms, merge candidates, decay-critical, gaps
-# Generates human questions for findings
-
-ask_pending(limit=5)
-# Returns questions that need human input
-```
-
-## 🔍 Session Watcher
-
-The session watcher monitors OpenClaw session JSONL files in real-time:
-
-- **Event-driven** — uses `watchdog`/inotify + **polling fallback** (every 30s) for reliability on Docker overlayfs
-- **Persistent offsets** — read positions stored in SQLite, survive container restarts
-- **Deduplication** — `content_hash` on every atom prevents duplicates on rescan or restart
-- **Markdown digests** — lightweight `.md` summary per session, survives JSONL deletion
-- **Smart filtering** — only captures user/assistant text; skips tool results, system messages, heartbeat noise, and system sessions (cron, MQTT, isolated)
-- **Truncation detection** — if a JSONL file shrinks (rotation/truncation), offset resets automatically
-- **Auto-expiring** — session atoms have a configurable TTL (default 30 days); a background thread cleans up expired atoms, digests, and stale offsets every 60 minutes
-- **Automatic** — starts on server boot, no manual intervention needed
+- **Event-driven** — watchdog/inotify + polling fallback (30s) for Docker overlayfs
+- **Persistent offsets** — survive container restarts
+- **Deduplication** — content_hash on every atom
+- **Markdown digests** — lightweight `.md` mirror per session
+- **Smart filtering** — skips tool results, system messages, heartbeats, cron/mqtt/isolated sessions
+- **Truncation detection** — auto-resets offset on file rotation
+- **Auto-expiring** — TTL cleanup every 60 minutes
 
 ### Configuration
-
-Mount the sessions directory and set the env vars:
 
 ```yaml
 volumes:
   - /path/to/openclaw/sessions:/sessions:ro
 environment:
   - OPENCLAW_SESSIONS_DIR=/sessions
-  - SESSION_TTL_DAYS=30
+  - SESSION_TTL_DAYS=7
+  - SESSION_INACTIVE_THRESHOLD_MINUTES=30
   - SESSION_DIGEST_DIR=/data/session_digests
-  - SESSION_POLL_INTERVAL=30
 ```
 
-Advanced filtering in `config.json`:
+## 🧠 Embeddings & Semantic Search
+
+Local embeddings via [Ollama](https://ollama.ai) (`nomic-embed-text`, 768-dim):
+
+- **Automatic** — embeddings generated on atom creation (async)
+- **Hybrid ranking** — `recall()` combines BM25 + cosine similarity
+- **Configurable weights** — tune FTS vs semantic balance
+- **Reindexable** — `reindex_embeddings` tool for batch regeneration
+- **Local & private** — no external API calls
 
 ```json
 {
-  "session_exclude_patterns": ["cron:", "mqtt", "heartbeat", "isolated"],
-  "session_max_content_chars": 2000,
-  "session_cleanup_interval_minutes": 60
+  "ollama": { "enabled": true, "host": "http://ollama:11434", "model": "nomic-embed-text", "dim": 768 },
+  "ranking": { "fts_weight": 0.30, "semantic_weight": 0.30, "confidence_weight": 0.20, "recency_weight": 0.10, "weight_factor": 0.10 }
+}
+```
+
+## 🔗 Auto-Bonding
+
+Automatically discovers relationships between atoms:
+
+- **Domain clustering** — same domain → `related_to` bonds
+- **Keyword overlap** — shared tags trigger connections
+- **Pattern detection** — naming conventions matched
+- **Semantic similarity** — embeddings find non-obvious links
+
+```json
+{
+  "auto_bond": { "semantic_threshold": 0.65, "domain_cluster_threshold": 0.4, "max_suggestions": 10 }
 }
 ```
 
@@ -229,7 +260,6 @@ Advanced filtering in `config.json`:
 ### Docker (recommended)
 
 ```yaml
-# docker-compose.yml
 services:
   memory-engine:
     build: .
@@ -239,26 +269,18 @@ services:
     volumes:
       - memory-data:/data
       - ./your-markdown-notes:/workspace/memory:ro
-      # Optional: OpenClaw sessions for session watcher
       - /path/to/openclaw/sessions:/sessions:ro
     environment:
       - MEMORY_DB_PATH=/data/memory.db
       - MARKDOWN_SOURCE=/workspace/memory
       - MEMORY_HOST=0.0.0.0
       - MEMORY_PORT=8085
-      # Optional: session watcher
       - OPENCLAW_SESSIONS_DIR=/sessions
-      - SESSION_TTL_DAYS=30
-
-volumes:
-  memory-data:
+      - SESSION_TTL_DAYS=7
+      - SESSION_INACTIVE_THRESHOLD_MINUTES=30
 ```
 
-```bash
-docker compose up -d
-```
-
-### Local (Python ≥3.11)
+### Local (Python ≥3.12)
 
 ```bash
 pip install -r requirements.txt
@@ -266,8 +288,6 @@ python server.py
 ```
 
 ### Connect to your MCP client
-
-Add to your MCP client config (e.g., Claude Desktop, OpenClaw, Cline, etc.):
 
 ```json
 {
@@ -280,33 +300,17 @@ Add to your MCP client config (e.g., Claude Desktop, OpenClaw, Cline, etc.):
 }
 ```
 
-See [`mcp.json`](mcp.json) for a ready-to-use example.
-
-## 📊 Use Cases
-
-- **Developer tools memory** — persistent context for coding assistants (Claude Code, Cursor, Cline, Windsurf): remember project decisions, architecture choices, and coding preferences across sessions
-- **Personal AI assistant memory** — remember preferences, decisions, project context across sessions
-- **Session continuity** — automatically capture conversation context, never lose where you left off
-- **Team knowledge base** — shared memory accessible to AI agents
-- **Project documentation** — import existing markdown docs, query them naturally
-- **Learning journal** — track decisions and their rationale over time
-
 ## ⚙️ Configuration
-
-Edit `config.json` to tune:
 
 | Section | What it controls |
 |---|---|
 | `decay` | Interval, decay factor, critical threshold, archive timeout |
-| `ranking` | Weight of FTS score, confidence, recency, and atom weight |
-| `learning` | Thresholds for contradiction, merge similarity, gap detection |
-| `sessions_dir` | Path to OpenClaw sessions directory |
-| `session_ttl_days` | TTL for session message atoms (default 30) |
-| `session_poll_interval` | Polling fallback interval in seconds (default 30) |
-| `session_digest_dir` | Directory for markdown session digests |
-| `session_exclude_patterns` | Session ID patterns to skip (cron, mqtt, etc.) |
-| `session_max_content_chars` | Max chars per session atom before truncation |
-| `session_cleanup_interval_minutes` | TTL cleanup loop interval (default 60) |
+| `ranking` | FTS, semantic, confidence, recency, and weight balance |
+| `ollama` | Embedding model, host, dimensions, reindex settings |
+| `auto_bond` | Semantic threshold, domain cluster threshold, max suggestions |
+| `learning` | Contradiction, merge similarity, gap detection thresholds |
+| `session_ttl_days` | TTL for session message atoms (default 7) |
+| `session_inactive_threshold_minutes` | Inactivity before session digest (default 30) |
 
 ## 🧬 How It Differs
 
@@ -314,11 +318,14 @@ Edit `config.json` to tune:
 |---|---|---|---|
 | Storage | SQLite | SQLite | SQLite |
 | FTS search | ❌ | ✅ (BM25) | ✅ (multi-factor) |
+| Semantic search | ❌ | ❌ | ✅ (Ollama) |
+| Hybrid ranking | ❌ | ❌ | ✅ (BM25 + semantic) |
 | Decay | ❌ | ❌ | ✅ |
 | Learning/Q&A | ❌ | ❌ | ✅ |
-| Session watcher | ❌ | ❌ | ✅ |
+| Auto-bonding | ❌ | ❌ | ✅ (rules + semantic) |
+| Session watcher | ❌ | ❌ | ✅ (v2.1 + digests) |
+| Session digests | ❌ | ❌ | ✅ (auto-summary) |
 | Markdown import | ❌ | ❌ | ✅ |
-| Auto-bonding | ❌ | ❌ | ✅ |
 | Graph traversal | Basic | ❌ | ✅ (depth + relation) |
 | Merge atoms | ❌ | ❌ | ✅ |
 | TTL | ❌ | ❌ | ✅ |
@@ -327,10 +334,6 @@ Edit `config.json` to tune:
 ## 📝 License
 
 MIT — see [LICENSE](LICENSE).
-
-## 🤝 Contributing
-
-Contributions welcome! Open an issue or PR.
 
 ---
 
