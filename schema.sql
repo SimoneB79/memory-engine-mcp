@@ -113,6 +113,19 @@ CREATE TRIGGER IF NOT EXISTS atoms_fts_au AFTER UPDATE ON atoms BEGIN
 END;
 
 -- ============================================================
+-- EMBEDDINGS: vector embeddings for semantic search (Ollama)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS atom_embeddings (
+    atom_id       TEXT PRIMARY KEY,
+    embedding     BLOB NOT NULL,               -- float32 array (768 dim for nomic-embed-text)
+    model         TEXT NOT NULL DEFAULT 'nomic-embed-text',
+    dim           INTEGER NOT NULL DEFAULT 768,
+    created_at    INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at    INTEGER NOT NULL DEFAULT (unixepoch()),
+    FOREIGN KEY (atom_id) REFERENCES atoms(id) ON DELETE CASCADE
+);
+
+-- ============================================================
 -- INDEXES
 -- ============================================================
 CREATE INDEX IF NOT EXISTS idx_atoms_type ON atoms(type);

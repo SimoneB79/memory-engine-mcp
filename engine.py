@@ -16,22 +16,30 @@ class Engine:
 
     def rank_results(self, fts_results: list[dict], query: str) -> list[dict]:
         """
-        Multi-factor ranking: FTS score × confidence × recency × weight.
+        Multi-factor ranking: FTS score × semantic × confidence × recency × weight.
         Returns sorted list with combined score and explanation.
         """
         cfg = self.config.get("ranking", {})
-        w_fts = cfg.get("fts_weight", 0.40)
-        w_conf = cfg.get("confidence_weight", 0.25)
-        w_recency = cfg.get("recency_weight", 0.20)
-        w_weight = cfg.get("weight_factor", 0.15)
+        w_fts = cfg.get("fts_weight", 0.30)
+        w_sem = cfg.get("semantic_weight", 0.30)
+        w_conf = cfg.get("confidence_weight", 0.20)
+        w_recency = cfg.get("recency_weight", 0.10)
+        w_weight = cfg.get("weight_factor", 0.10)
 
         now = int(time.time())
         scored = []
 
         for row in fts_results:
             # FTS score: bm25 returns negative (more negative = better), normalize
-            raw_fts = row.get("fts_score", -1.0)
-            fts_norm = 1.0 / (1.0 + abs(raw_fts)) if raw_fts else 0.5
+            raw_fts = row.get("fts_score")
+            if raw_fts is not None:
+                fts_norm = 1.0 / (1.0 + abs(raw_fts)) if raw_fts else 0.5
+            else:
+                fts_norm = 0.0  # No FTS match (semantic-only result)
+
+            # Semantic score (0-1 or None)
+            sem_raw = row.get("semantic_score")
+            sem_norm = sem_raw if sem_raw is not None else 0.0
 
             # Confidence: already 0-1
             conf = row.get("confidence", 0.5)
@@ -46,6 +54,7 @@ class Engine:
             # Combined score
             score = (
                 w_fts * fts_norm
+                + w_sem * sem_norm
                 + w_conf * conf
                 + w_recency * recency
                 + w_weight * weight_norm
@@ -54,6 +63,7 @@ class Engine:
             row["rank_score"] = round(score, 4)
             row["rank_breakdown"] = {
                 "fts": round(fts_norm, 3),
+                "semantic": round(sem_norm, 3),
                 "confidence": round(conf, 3),
                 "recency": round(recency, 3),
                 "weight": round(weight_norm, 3),
@@ -67,16 +77,40 @@ class Engine:
     # ─── RECALL (smart query) ────────────────────────────────
 
     def recall(self, query: str, limit: int = 5, min_weight: float = 0.0,
-               domain: str | None = None) -> list[dict]:
+               domain: str | None = None, semantic: bool = True,
+               embeddings=None) -> list[dict]:
         """
-        Smart recall: FTS search + multi-factor ranking.
+        Smart recall: FTS search + optional semantic search + multi-factor ranking.
         """
         # Get FTS results (fetch more, then filter)
         fts_results = self.db.search_fts(query, limit=limit * 3)
 
+        # Semantic search (optional)
+        sem_results = []
+        if semantic and embeddings and embeddings.enabled:
+            sem_raw = embeddings.semantic_search(
+                query, limit=limit * 3, domain=domain, min_weight=min_weight,
+            )
+            # Normalize to same format as fts_results
+            for r in sem_raw:
+                r["fts_score"] = None
+                r["semantic_score"] = r.pop("semantic_score")
+                sem_results.append(r)
+
+        # Merge FTS + semantic, deduplicate by atom_id
+        merged = {}
+        for r in fts_results:
+            merged[r["id"]] = r
+            merged[r["id"]]["semantic_score"] = None
+        for r in sem_results:
+            if r["id"] in merged:
+                merged[r["id"]]["semantic_score"] = r.get("semantic_score")
+            else:
+                merged[r["id"]] = r
+
         # Filter by weight and domain
         filtered = []
-        for r in fts_results:
+        for r in merged.values():
             if r.get("weight", 1.0) < min_weight:
                 continue
             if domain and r.get("domain") != domain:
@@ -98,6 +132,7 @@ class Engine:
                 "confidence": r["confidence"],
                 "weight": r["weight"],
                 "rank_score": r["rank_score"],
+                "semantic_score": r.get("semantic_score"),
                 "tags": __import__("json").loads(r.get("tags") or "[]"),
             })
         return results
@@ -122,8 +157,8 @@ class Engine:
 
         # Tag overlap
         import json
-        tags_a = set(json.loads(atom_a.get("tags") or "[]"))
-        tags_b = set(json.loads(atom_b.get("tags") or "[]"))
+        tags_a = set(atom_a.get("tags")) if isinstance(atom_a.get("tags"), list) else set(json.loads(atom_a.get("tags") or "[]"))
+        tags_b = set(atom_b.get("tags")) if isinstance(atom_b.get("tags"), list) else set(json.loads(atom_b.get("tags") or "[]"))
         if tags_a and tags_b:
             tag_sim = len(tags_a & tags_b) / len(tags_a | tags_b)
         else:

@@ -18,6 +18,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY schema.sql .
 COPY db.py .
 COPY engine.py .
+COPY embeddings.py .
+COPY auto_bond.py .
 COPY learning.py .
 COPY importer.py .
 COPY session_watcher.py .

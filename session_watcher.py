@@ -30,19 +30,21 @@ class SessionWatcher:
     Watches OpenClaw session .jsonl files and creates memory atoms
     for each meaningful message (user/assistant text).
 
-    Atoms: type='session_msg', domain='session/<session_id>', ttl=30 days
-    Digests: /data/session_digests/<session_id>.md
+    Atoms: type='session_msg', domain='session/<session_id>', ttl=7 days (raw messages)
+           type='session_digest', domain='session/<session_id>', ttl=None (1 per session, permanent)
+    Digests: /data/session_digests/<session_id>.md (markdown mirror)
     """
 
     def __init__(
         self,
         db,
         sessions_dir: str,
-        ttl_days: int = 30,
+        ttl_days: int = 7,
         poll_interval: int = 30,
         digest_dir: str | None = None,
         exclude_patterns: list[str] | None = None,
         max_content_chars: int = 2000,
+        inactive_threshold_minutes: int = 30,
     ):
         self.db = db
         self.sessions_dir = Path(sessions_dir)
@@ -51,9 +53,12 @@ class SessionWatcher:
         self.digest_dir = Path(digest_dir) if digest_dir else None
         self.exclude_patterns = exclude_patterns or []
         self.max_content_chars = max_content_chars
+        self.inactive_threshold = inactive_threshold_minutes * 60  # seconds
         self._observer: Observer | None = None
         self._poll_thread: threading.Thread | None = None
         self._running = False
+        # Track last activity per session (session_id -> epoch seconds)
+        self._last_activity: dict[str, float] = {}
 
     # ─── LIFECYCLE ───────────────────────────────────────────
 
@@ -86,9 +91,9 @@ class SessionWatcher:
             self._poll_thread.start()
 
         logger.info(
-            "SessionWatcher v2 started on %s (TTL=%dd, poll=%ds, digest=%s, exclude=%s)",
+            "SessionWatcher v2.1 started on %s (TTL=%dd, poll=%ds, inactive=%dm, digest=%s, exclude=%s)",
             self.sessions_dir, self.ttl_days, self.poll_interval,
-            self.digest_dir, self.exclude_patterns,
+            self.inactive_threshold // 60, self.digest_dir, self.exclude_patterns,
         )
 
     def stop(self):
@@ -255,6 +260,9 @@ class SessionWatcher:
 
     def _create_session_atom(self, session_id: str, msg: dict):
         """Create a session_msg atom with dedup via content_hash."""
+        # Track last activity for digest generation
+        self._last_activity[session_id] = int(time.time())
+
         # Compute hash for dedup
         hash_input = f"{session_id}:{msg['role']}:{msg['content'][:500]}"
         content_hash = hashlib.md5(hash_input.encode()).hexdigest()
@@ -323,6 +331,106 @@ class SessionWatcher:
 
         digest_path.write_text("\n".join(lines), encoding="utf-8")
 
+    # ─── SESSION DIGEST ATOM (auto-summary on inactive) ────
+
+    def _create_session_digest_atom(self, session_id: str):
+        """
+        Create a permanent 'session_digest' atom summarizing the session.
+        Extracts user messages (concise by nature) + assistant first lines.
+        Called when a session goes inactive (no new messages for threshold minutes).
+        """
+        digest_atom_id = f"digest_{session_id[:8]}_{uuid.uuid4().hex[:6]}"
+
+        # Check if digest atom already exists for this session
+        with self.db.conn() as c:
+            existing = c.execute(
+                "SELECT 1 FROM atoms WHERE type = 'session_digest' AND domain = ? AND status = 'active'",
+                (f"session/{session_id}",),
+            ).fetchone()
+            if existing:
+                return  # Already has a digest atom
+
+            # Fetch all user messages for this session (concise summary)
+            rows = c.execute(
+                """SELECT body, created_at FROM atoms
+                   WHERE type = 'session_msg' AND domain = ? AND status = 'active'
+                   ORDER BY created_at ASC""",
+                (f"session/{session_id}",),
+            ).fetchall()
+
+        if not rows:
+            return
+
+        # Build compact summary from user messages
+        user_lines = []
+        first_ts = None
+        last_ts = None
+        for r in rows:
+            try:
+                body = json.loads(r["body"])
+                if body.get("role") == "user":
+                    content = body.get("content", "")
+                    # Truncate each user msg to 200 chars for the summary
+                    if len(content) > 200:
+                        content = content[:200] + "..."
+                    user_lines.append(f"- {content}")
+                    if first_ts is None:
+                        first_ts = body.get("timestamp", "")
+                    last_ts = body.get("timestamp", "")
+            except (json.JSONDecodeError, TypeError):
+                continue
+
+        if not user_lines:
+            return
+
+        # Limit summary size (max 30 user messages)
+        if len(user_lines) > 30:
+            user_lines = user_lines[:15] + ["..."] + user_lines[-15:]
+
+        summary_body = f"Session: {session_id}\nPeriod: {first_ts} → {last_ts}\nMessages: {len(rows)}\n\nUser messages:\n" + "\n".join(user_lines)
+
+        # Title: date + first user message as hint
+        first_user = user_lines[0].replace("- ", "", 1)[:60]
+        title = f"Digest: {first_user}"
+
+        try:
+            self.db.create_atom(
+                atom_id=digest_atom_id,
+                title=title,
+                body=summary_body,
+                type="session_digest",
+                domain=f"session/{session_id}",
+                confidence=0.7,
+                tags=["session_digest", session_id[:8]],
+                source="session_watcher",
+                ttl=None,  # Permanent
+                content_hash=None,
+            )
+            logger.info("Created session_digest atom for %s (%d user msgs)", session_id, len(user_lines))
+        except Exception as e:
+            logger.error("Failed to create session digest atom: %s", e)
+
+    def _check_inactive_sessions(self):
+        """
+        Check all tracked sessions; create digest atom for those inactive
+        past the threshold. Called from poll loop.
+        """
+        if not self._last_activity:
+            return
+
+        now = int(time.time())
+        checked = []
+
+        for session_id, last_ts in list(self._last_activity.items()):
+            if now - last_ts >= self.inactive_threshold:
+                # Session is inactive → create digest if not already done
+                self._create_session_digest_atom(session_id)
+                checked.append(session_id)
+
+        # Remove checked sessions from tracking (digest created, no need to recheck)
+        for sid in checked:
+            self._last_activity.pop(sid, None)
+
     # ─── POLLING FALLBACK ────────────────────────────────────
 
     def _poll_loop(self):
@@ -331,6 +439,7 @@ class SessionWatcher:
             time.sleep(self.poll_interval)
             try:
                 self._scan_all()
+                self._check_inactive_sessions()
             except Exception as e:
                 logger.error("Polling scan error: %s", e)
 
@@ -350,7 +459,8 @@ class SessionWatcher:
     def cleanup_expired(self) -> int:
         """
         Delete session_msg atoms whose TTL has expired.
-        Also cleans up old markdown digests.
+        session_digest atoms are permanent (ttl=NULL) and never cleaned.
+        Also cleans up old markdown digest files.
         """
         now = int(time.time())
         count = 0

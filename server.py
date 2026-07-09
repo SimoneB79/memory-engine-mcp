@@ -15,13 +15,15 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 # ─── Version ────────────────────────────────────────────────
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 from db import DB
 from engine import Engine
 from learning import Learning
 from importer import MarkdownImporter
 from session_watcher import SessionWatcher
+from embeddings import EmbeddingEngine
+from auto_bond import AutoBondEngine
 
 # ─── Config ──────────────────────────────────────────────────
 
@@ -59,6 +61,10 @@ SESSION_CLEANUP_INTERVAL = int(os.environ.get(
     "SESSION_CLEANUP_INTERVAL_MINUTES",
     config.get("session_cleanup_interval_minutes", 60),
 ))
+SESSION_INACTIVE_THRESHOLD = int(os.environ.get(
+    "SESSION_INACTIVE_THRESHOLD_MINUTES",
+    config.get("session_inactive_threshold_minutes", 30),
+))
 
 # ─── Init ────────────────────────────────────────────────────
 
@@ -69,6 +75,8 @@ db = DB(DB_PATH)
 engine = Engine(db, config)
 learning = Learning(db, engine, config)
 importer = MarkdownImporter(db, MD_SOURCE)
+embeddings = EmbeddingEngine(db, config)
+auto_bond_engine = AutoBondEngine(db, embeddings, config)
 
 # Start session watcher (background, watchdog + polling)
 session_watcher = SessionWatcher(
@@ -79,6 +87,7 @@ session_watcher = SessionWatcher(
     digest_dir=SESSION_DIGEST_DIR,
     exclude_patterns=SESSION_EXCLUDE_PATTERNS,
     max_content_chars=SESSION_MAX_CONTENT,
+    inactive_threshold_minutes=SESSION_INACTIVE_THRESHOLD,
 )
 session_watcher.start()
 
@@ -96,6 +105,95 @@ def _ttl_cleanup_loop():
 
 _cleanup_thread = threading.Thread(target=_ttl_cleanup_loop, daemon=True)
 _cleanup_thread.start()
+
+# ─── Background embedding indexer ───────────────────────────
+
+# Global state for the background reindex
+_reindex_state = {
+    "running": False,
+    "total": 0,
+    "processed": 0,
+    "created": 0,
+    "errors": 0,
+    "started_at": None,
+    "finished_at": None,
+    "current_atom": None,
+}
+
+def _reindex_loop():
+    """Background thread: index all atoms missing embeddings, then keep running for new ones."""
+    batch_delay = config.get("ollama", {}).get("reindex_delay_sec", 0.1)
+    poll_interval = config.get("ollama", {}).get("reindex_poll_sec", 30)
+    
+    while True:
+        try:
+            # Count atoms missing embeddings
+            with db.conn() as c:
+                row = c.execute(
+                    """SELECT COUNT(*) as n FROM atoms a
+                       LEFT JOIN atom_embeddings e ON a.id = e.atom_id
+                       WHERE a.status = 'active' AND e.atom_id IS NULL"""
+                ).fetchone()
+                pending = row["n"]
+            
+            if pending == 0:
+                _reindex_state["running"] = False
+                _reindex_state["current_atom"] = None
+                time.sleep(poll_interval)
+                continue
+            
+            if not _reindex_state["running"]:
+                _reindex_state["running"] = True
+                _reindex_state["started_at"] = int(time.time())
+                _reindex_state["total"] = pending
+                _reindex_state["processed"] = 0
+                _reindex_state["created"] = 0
+                _reindex_state["errors"] = 0
+                _reindex_state["finished_at"] = None
+                print(f"[reindex] Starting: {pending} atoms pending", file=sys.stderr)
+            
+            # Process one atom
+            with db.conn() as c:
+                row = c.execute(
+                    """SELECT a.id FROM atoms a
+                       LEFT JOIN atom_embeddings e ON a.id = e.atom_id
+                       WHERE a.status = 'active' AND e.atom_id IS NULL
+                       LIMIT 1"""
+                ).fetchone()
+            
+            if not row:
+                _reindex_state["running"] = False
+                _reindex_state["finished_at"] = int(time.time())
+                print(f"[reindex] Done: {_reindex_state['created']} created, {_reindex_state['errors']} errors", file=sys.stderr)
+                continue
+            
+            atom_id = row["id"]
+            _reindex_state["current_atom"] = atom_id
+            atom = db.get_atom(atom_id)
+            
+            if atom:
+                emb = embeddings.embed_atom(atom)
+                if emb:
+                    embeddings.store_embedding(atom_id, emb)
+                    _reindex_state["created"] += 1
+                else:
+                    _reindex_state["errors"] += 1
+            else:
+                _reindex_state["errors"] += 1
+            
+            _reindex_state["processed"] += 1
+            
+            # Update total (new atoms may have been added)
+            _reindex_state["total"] = _reindex_state["processed"] + pending - 1
+            
+            time.sleep(batch_delay)
+            
+        except Exception as e:
+            print(f"[reindex] error: {e}", file=sys.stderr)
+            time.sleep(5)
+
+_reindex_thread = threading.Thread(target=_reindex_loop, daemon=True)
+_reindex_thread.start()
 
 # ─── MCP Server ──────────────────────────────────────────────
 
@@ -142,12 +240,23 @@ def remember(
         source="ai",
         ttl=ttl,
     )
+    # Async embedding (non-blocking — background thread)
+    if embeddings.enabled:
+        def _bg_embed():
+            try:
+                emb = embeddings.embed_atom(atom)
+                if emb:
+                    embeddings.store_embedding(atom["id"], emb)
+            except Exception as e:
+                print(f"[embed_bg] error for {atom['id']}: {e}", file=sys.stderr)
+        threading.Thread(target=_bg_embed, daemon=True).start()
     return json.dumps({
         "status": "created",
         "id": atom["id"],
         "title": atom["title"],
         "domain": atom["domain"],
         "type": atom["type"],
+        "embedding_queued": embeddings.enabled,
     }, ensure_ascii=False)
 
 
@@ -157,21 +266,26 @@ def recall(
     limit: int = 5,
     min_weight: float = 0.0,
     domain: str | None = None,
+    semantic: bool = True,
 ) -> str:
     """
     Smart recall: search memory with multi-factor ranking.
-    Combines FTS relevance, confidence, recency, and weight.
+    Combines FTS relevance, semantic similarity, confidence, recency, and weight.
     
     Args:
         query: Natural language query
         limit: Max results (default 5)
         min_weight: Filter out low-weight atoms
         domain: Filter by domain
+        semantic: If True (default), also use semantic search via Ollama
     
     Returns:
         JSON string with ranked results
     """
-    results = engine.recall(query, limit=limit, min_weight=min_weight, domain=domain)
+    results = engine.recall(
+        query, limit=limit, min_weight=min_weight, domain=domain,
+        semantic=semantic, embeddings=embeddings if semantic else None,
+    )
     return json.dumps(results, ensure_ascii=False, indent=2)
 
 
@@ -512,6 +626,159 @@ def version() -> str:
     }, ensure_ascii=False, indent=2)
 
 
+@mcp.tool()
+def semantic_search(
+    query: str,
+    limit: int = 5,
+    domain: str | None = None,
+    min_weight: float = 0.0,
+) -> str:
+    """
+    Semantic search using Ollama embeddings (nomic-embed-text).
+    Finds atoms by meaning, not just keyword match.
+    
+    Args:
+        query: Natural language query
+        limit: Max results (default 5)
+        domain: Filter by domain
+        min_weight: Filter by minimum weight
+    
+    Returns:
+        JSON string with ranked semantic results
+    """
+    results = embeddings.semantic_search(
+        query, limit=limit, domain=domain, min_weight=min_weight,
+    )
+    return json.dumps(results, ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
+def suggest_bonds(
+    atom_id: str,
+    auto_apply: bool = False,
+) -> str:
+    """
+    Suggest bonds for an atom using rules + semantic similarity.
+    Strategies: domain cluster, keyword overlap, pattern detection, semantic.
+    
+    Args:
+        atom_id: The atom to find bonds for
+        auto_apply: If True, create the bonds directly
+    
+    Returns:
+        JSON string with bond suggestions
+    """
+    suggestions = auto_bond_engine.suggest_bonds_for_atom(
+        atom_id, auto_apply=auto_apply,
+    )
+    return json.dumps({
+        "atom_id": atom_id,
+        "suggestions": len(suggestions),
+        "applied": auto_apply,
+        "bonds": suggestions,
+    }, ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
+def suggest_bonds_all(
+    auto_apply: bool = False,
+    limit_per_atom: int = 2,
+    max_atoms: int = 30,
+) -> str:
+    """
+    Scan active atoms and suggest/create bonds.
+    Useful for initial graph population or periodic maintenance.
+    
+    Args:
+        auto_apply: If True, create bonds directly
+        limit_per_atom: Max suggestions per atom
+        max_atoms: Max atoms to scan (default 30)
+    
+    Returns:
+        JSON string with summary statistics and top suggestions
+    """
+    try:
+        result = auto_bond_engine.suggest_bonds_all(
+            auto_apply=auto_apply, limit_per_atom=limit_per_atom,
+            max_atoms=max_atoms,
+        )
+        return json.dumps(result, ensure_ascii=False, indent=2)
+    except Exception as e:
+        import traceback
+        return json.dumps({"error": str(e), "trace": traceback.format_exc()[-500:]})
+
+
+@mcp.tool()
+def reindex_embeddings(force: bool = False) -> str:
+    """
+    Check the status of the background embedding indexer.
+    The indexer runs automatically at startup and processes all atoms missing embeddings.
+    
+    Args:
+        force: If True, delete all existing embeddings and restart from scratch
+    
+    Returns:
+        JSON string with current indexing progress
+    """
+    if force:
+        with db.conn() as c:
+            c.execute("DELETE FROM atom_embeddings")
+        embeddings.invalidate_cache()
+        _reindex_state["running"] = False
+        _reindex_state["finished_at"] = None
+        return json.dumps({"status": "force_restart", "message": "All embeddings cleared, background indexer will rebuild"}, ensure_ascii=False)
+    
+    # Current stats
+    with db.conn() as c:
+        total_atoms = c.execute("SELECT COUNT(*) as n FROM atoms WHERE status = 'active'").fetchone()["n"]
+        total_emb = c.execute("SELECT COUNT(*) as n FROM atom_embeddings").fetchone()["n"]
+    
+    elapsed = None
+    if _reindex_state["started_at"]:
+        end = _reindex_state["finished_at"] or int(time.time())
+        elapsed = end - _reindex_state["started_at"]
+    
+    return json.dumps({
+        "status": "running" if _reindex_state["running"] else ("done" if _reindex_state["finished_at"] else "idle"),
+        "total_atoms": total_atoms,
+        "total_embeddings": total_emb,
+        "missing": total_atoms - total_emb,
+        "progress": {
+            "processed": _reindex_state["processed"],
+            "created": _reindex_state["created"],
+            "errors": _reindex_state["errors"],
+            "current_atom": _reindex_state["current_atom"],
+        },
+        "started_at": _reindex_state["started_at"],
+        "finished_at": _reindex_state["finished_at"],
+        "elapsed_sec": elapsed,
+    }, ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
+def find_similar(atom_id: str, limit: int = 5, threshold: float = 0.5) -> str:
+    """
+    Find atoms semantically similar to a given atom.
+    Uses cosine similarity on embeddings.
+    
+    Args:
+        atom_id: The reference atom
+        limit: Max results
+        threshold: Minimum similarity score (0-1)
+    
+    Returns:
+        JSON string with similar atoms and scores
+    """
+    results = embeddings.find_similar_atoms(
+        atom_id, limit=limit, threshold=threshold,
+    )
+    return json.dumps({
+        "atom_id": atom_id,
+        "similar_count": len(results),
+        "results": results,
+    }, ensure_ascii=False, indent=2)
+
+
 # ─── Main ────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -519,6 +786,7 @@ if __name__ == "__main__":
     print(f"   DB: {DB_PATH}")
     print(f"   Markdown source: {MD_SOURCE}")
     print(f"   Sessions dir: {SESSIONS_DIR} (TTL={SESSION_TTL_DAYS}d)")
+    print(f"   Embeddings: {'✅ ' + embeddings.model if embeddings.enabled else '❌ disabled'}")
     try:
         mcp.run(transport="sse")
     finally:

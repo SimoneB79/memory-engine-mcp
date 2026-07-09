@@ -9,10 +9,24 @@
         "archive_after_days": 180
     },
     "ranking": {
-        "fts_weight": 0.40,
-        "confidence_weight": 0.25,
-        "recency_weight": 0.20,
-        "weight_factor": 0.15
+        "fts_weight": 0.30,
+        "semantic_weight": 0.30,
+        "confidence_weight": 0.20,
+        "recency_weight": 0.10,
+        "weight_factor": 0.10
+    },
+    "ollama": {
+        "enabled": true,
+        "host": "http://ollama:11434",
+        "model": "nomic-embed-text",
+        "dim": 768,
+        "reindex_delay_sec": 0.05,
+        "reindex_poll_sec": 30
+    },
+    "auto_bond": {
+        "semantic_threshold": 0.65,
+        "domain_cluster_threshold": 0.4,
+        "max_suggestions": 10
     },
     "learning": {
         "contradiction_threshold": 0.7,
@@ -28,10 +42,11 @@
         "port": 8085
     },
     "sessions_dir": "/sessions",
-    "session_ttl_days": 30,
+    "session_ttl_days": 7,
     "session_poll_interval": 30,
     "session_digest_dir": "/data/session_digests",
     "session_exclude_patterns": ["cron:", "mqtt", "heartbeat", "isolated"],
     "session_max_content_chars": 2000,
-    "session_cleanup_interval_minutes": 60
+    "session_cleanup_interval_minutes": 60,
+    "session_inactive_threshold_minutes": 30
 }
