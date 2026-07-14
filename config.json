@@ -9,11 +9,11 @@
         "archive_after_days": 180
     },
     "ranking": {
-        "fts_weight": 0.30,
-        "semantic_weight": 0.30,
-        "confidence_weight": 0.20,
-        "recency_weight": 0.10,
-        "weight_factor": 0.10
+        "fts_weight": 0.3,
+        "semantic_weight": 0.3,
+        "confidence_weight": 0.2,
+        "recency_weight": 0.1,
+        "weight_factor": 0.1
     },
     "ollama": {
         "enabled": true,
@@ -26,7 +26,10 @@
     "auto_bond": {
         "semantic_threshold": 0.65,
         "domain_cluster_threshold": 0.4,
-        "max_suggestions": 10
+        "max_suggestions": 10,
+        "auto_apply_on_remember": true,
+        "auto_apply_min_confidence": 0.65,
+        "max_auto_apply": 5
     },
     "learning": {
         "contradiction_threshold": 0.7,
@@ -35,7 +38,22 @@
         "weak_access_threshold": 5,
         "decay_critical_threshold": 0.15,
         "gap_body_min_chars": 50,
-        "max_pending_questions": 20
+        "max_pending_questions": 20,
+        "graph_gap_min_weight": 0.6,
+        "graph_gap_limit": 20,
+        "graph_gap_types": [
+            "fact",
+            "decision",
+            "procedure",
+            "preference",
+            "project",
+            "note"
+        ],
+        "graph_gap_excluded_domain_prefixes": [
+            "daily/",
+            "session/"
+        ],
+        "graph_gap_enabled": false
     },
     "server": {
         "host": "0.0.0.0",
@@ -45,8 +63,39 @@
     "session_ttl_days": 7,
     "session_poll_interval": 30,
     "session_digest_dir": "/data/session_digests",
-    "session_exclude_patterns": ["cron:", "mqtt", "heartbeat", "isolated"],
+    "session_exclude_patterns": [
+        "cron:",
+        "mqtt",
+        "heartbeat",
+        "isolated"
+    ],
     "session_max_content_chars": 2000,
     "session_cleanup_interval_minutes": 60,
-    "session_inactive_threshold_minutes": 30
+    "session_inactive_threshold_minutes": 30,
+    "graph_recall": {
+        "enabled": true,
+        "seed_limit": 3,
+        "neighbors_per_seed": 4,
+        "graph_weight": 0.55,
+        "min_strength": 0.35
+    },
+    "curator": {
+        "max_atoms_per_run": 80,
+        "compact_min_body_chars": 1200,
+        "compact_max_chars": 600,
+        "bond_limit_per_atom": 2,
+        "promotion_min_occurrences": 3,
+        "stale_after_days": 180,
+        "isolated_min_age_days": 7,
+        "isolated_high_access_threshold": 3,
+        "isolated_high_weight_threshold": 0.9,
+        "isolated_archive_after_days": 90,
+        "isolated_limit": 40,
+        "volatile_domain_prefixes": [
+            "session/"
+        ],
+        "standalone_ok_types": [
+            "preference"
+        ]
+    }
 }

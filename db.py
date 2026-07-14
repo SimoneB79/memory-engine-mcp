@@ -189,6 +189,9 @@ class DB:
 
     def delete_atom(self, atom_id: str) -> bool:
         with self.conn() as c:
+            # Prima cancella i bonds che coinvolgono questo atomo (da entrambi i lati)
+            c.execute("DELETE FROM bonds WHERE from_id = ? OR to_id = ?", (atom_id, atom_id))
+            # Poi cancella l'atomo
             cur = c.execute("DELETE FROM atoms WHERE id = ?", (atom_id,))
             return cur.rowcount > 0
 
@@ -285,8 +288,31 @@ class DB:
                 results.extend(dict(r) for r in rows)
             return results
 
+    def get_related_atoms(
+        self,
+        atom_id: str,
+        limit: int = 10,
+        min_strength: float = 0.0,
+    ) -> list[dict]:
+        """Return active atoms directly connected to atom_id, in both directions."""
+        with self.conn() as c:
+            rows = c.execute(
+                """SELECT a.*, b.relation, b.strength, b.evidence,
+                          b.from_id, b.to_id,
+                          CASE WHEN b.from_id = ? THEN 'out' ELSE 'in' END as direction
+                   FROM bonds b
+                   JOIN atoms a ON a.id = CASE WHEN b.from_id = ? THEN b.to_id ELSE b.from_id END
+                   WHERE (b.from_id = ? OR b.to_id = ?)
+                     AND b.strength >= ?
+                     AND a.status = 'active'
+                   ORDER BY b.strength DESC, a.weight DESC, a.access_count DESC
+                   LIMIT ?""",
+                (atom_id, atom_id, atom_id, atom_id, min_strength, limit),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
     def search_graph(self, atom_id: str, depth: int = 2, relation: str | None = None) -> dict:
-        """BFS traversal of the knowledge graph."""
+        """BFS traversal of the knowledge graph, following in/out bonds."""
         visited = set()
         result_nodes = []
         result_edges = []
@@ -306,18 +332,21 @@ class DB:
                 if current_depth < depth:
                     if relation:
                         rows = c.execute(
-                            "SELECT * FROM bonds WHERE from_id = ? AND relation = ?",
-                            (current_id, relation),
+                            """SELECT * FROM bonds
+                               WHERE (from_id = ? OR to_id = ?) AND relation = ?""",
+                            (current_id, current_id, relation),
                         ).fetchall()
                     else:
                         rows = c.execute(
-                            "SELECT * FROM bonds WHERE from_id = ?", (current_id,)
+                            "SELECT * FROM bonds WHERE from_id = ? OR to_id = ?",
+                            (current_id, current_id),
                         ).fetchall()
                     for b in rows:
                         bd = dict(b)
                         result_edges.append(bd)
-                        if b["to_id"] not in visited:
-                            queue.append((b["to_id"], current_depth + 1))
+                        next_id = b["to_id"] if b["from_id"] == current_id else b["from_id"]
+                        if next_id not in visited:
+                            queue.append((next_id, current_depth + 1))
         return {"nodes": result_nodes, "edges": result_edges}
 
     # ─── MERGE ───────────────────────────────────────────────

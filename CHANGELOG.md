@@ -5,7 +5,114 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.1.0] — 2026-06-29
+## [1.5.2] — 2026-07-14
+
+### Graph-Gap Moved to Curator
+
+The `learning_run` no longer generates `graph_gap` pending questions by
+default. Isolated-atom review is now handled entirely by the cognitive
+curator, which classifies atoms without bonds silently — no pending
+questions, no human noise.
+
+#### Changes
+
+- **`learning.graph_gap_enabled`** config flag (default: `false`) — set to
+  `true` to restore the old behavior where `learning_run` creates
+  `graph_gap` questions for isolated atoms.
+- **`curator_run`** now includes an `isolated_classification` pass that
+  categorizes atoms into four states:
+  - `needs_link` — durable, high-weight, or frequently accessed
+  - `standalone_ok` — naturally standalone (preferences, explicitly allowed)
+  - `volatile_candidate` — session/chat material or too new
+  - `archive_candidate` — old and never accessed
+- With `auto_apply=True`, the curator writes **non-destructive metadata**
+  only (`isolated_state`, `isolated_reason`, `isolated_reviewed_at`). It
+  never archives or deletes atoms.
+- New config fields: `isolated_min_age_days`, `isolated_high_access_threshold`,
+  `isolated_high_weight_threshold`, `isolated_archive_after_days`,
+  `isolated_limit`, `volatile_domain_prefixes`, `standalone_ok_types`.
+
+#### Bug Fixes
+
+- **Anti-repeat fix (v1.5.1):** `learning_run` no longer regenerates
+  already-answered questions. The dedup key set now includes pending,
+  answered, and dismissed questions with canonicalized atom ID lists.
+
+---
+
+## [1.5.0] — 2026-07-14
+
+### Cognitive Curator + Graph-Aware Recall
+
+Major cognitive features: a conservative maintenance engine and
+bidirectional graph expansion in recall.
+
+#### New Tools (7)
+
+- **`cognitive_status`** — graph health metrics (isolated atoms, bonds,
+  gaps, stale atoms, pending questions, missing compacts)
+- **`working_set`** — task-oriented context pack combining recall,
+  graph neighbors, and key procedures/decisions
+- **`curator_run`** — conservative curation pass (body compaction,
+  bond suggestions, promotion/merge detection)
+- **`memory_summary`** — hierarchical 3-level summary (global → domain → detail)
+- **`error_log`** — record mistakes and corrections
+- **`error_check`** — check if a task has failed before
+- **`error_list`** — list errors by resolution status
+
+#### Graph-Aware Recall
+
+- `recall()` now expands top direct/semantic hits bidirectionally via bonds
+- Output includes `match_kind` (`direct`, `semantic`, `graph`, or combined)
+- `graph_reason` explains how a graph-discovered atom was found
+- `search_graph()` follows bonds both in and out
+
+#### Error Memory
+
+- New `error_memory` table in SQLite
+- Auto-promotion: errors with 3+ occurrences become permanent preference
+  atoms
+- `error_check` retrieves past unresolved errors before attempting a task
+
+#### Structured Preferences
+
+- `preference_search` tool with JSON1-powered filtering by category, scope,
+  and free-text query
+
+#### Auto-Bonding on Remember
+
+- `remember()` now triggers rule-based auto-bonding immediately when
+  `auto_bond.auto_apply_on_remember` is enabled in config
+
+---
+
+## [1.4.0] — 2026-07-14
+
+### Graph Recall Engine
+
+- `recall()` performs bidirectional graph expansion from top hits
+- `search_graph()` traverses bonds in both directions (in/out)
+- `suggest_bonds_all()` bulk bond creation with auto-apply
+- Auto-bonding on `remember()` via `auto_apply_on_remember` config
+
+---
+
+## [1.3.0] — 2026-07-10
+
+### Error Memory + Preferences + Hierarchical Summaries
+
+Three feature additions inspired by community research:
+
+- **Error Memory** — `error_memory` table, auto-promotion logic,
+  3 MCP tools (`error_log`, `error_check`, `error_list`)
+- **Structured Preferences** — `search_preferences` in db.py with JSON1,
+  1 MCP tool (`preference_search`)
+- **Hierarchical Summaries** — `hierarchical_summary()` in engine.py
+  (L0 global, L1 per-domain, L2 detail), 1 MCP tool (`memory_summary`)
+
+---
+
+## [1.2.0] — 2026-07-09
 
 ### Session Watcher v2 — Complete Rewrite
 

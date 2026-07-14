@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="#"><img alt="Version" src="https://img.shields.io/badge/version-1.2.0-blue" /></a>
+  <a href="#"><img alt="Version" src="https://img.shields.io/badge/version-1.5.2-blue" /></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green" /></a>
   <a href="#"><img alt="Python" src="https://img.shields.io/badge/python-3.12+-blue" /></a>
 </p>
@@ -26,10 +26,16 @@
 ### Core Memory
 - **Atomic memory model** — knowledge stored as atoms (facts, decisions, events, preferences, logs, procedures, notes, session messages, session digests)
 - **Hybrid ranking** — recall combines FTS relevance × **semantic similarity** × confidence × recency × weight
+- **Graph-aware recall** — top results are expanded bidirectionally via bonds, enriching context with related atoms
 - **Semantic search** — local embeddings via Ollama (`nomic-embed-text`) for meaning-based recall, not just keyword match
 - **Organic decay** — atoms lose weight over time if not accessed; critical ones get flagged for review
 - **Learning engine** — generates questions for the human when it detects contradictions, gaps, weak atoms, or merge candidates
+- **Cognitive curator** — conservative maintenance pass: body compaction, bond suggestions, duplicate detection, promotion candidates, and isolated-atom classification — all without creating pending questions by default
+- **Isolated atom classification** — atoms without bonds are classified as `needs_link`, `standalone_ok`, `volatile_candidate`, or `archive_candidate`, with metadata tagging (no destructive actions)
+- **Error memory** — tracks mistakes and corrections; auto-promotes recurring errors (3+ occurrences) to permanent preference rules
+- **Structured preferences** — searchable preference atoms with category, scope, and condition metadata
 - **Graph traversal** — navigate the knowledge graph with depth control and relation filtering
+- **Hierarchical summaries** — 3-level memory overview (global → per-domain → detail) for quick orientation
 - **Markdown import** — one-way sync from your existing markdown notes (coexistence, not replacement)
 - **Merge & deduplicate** — consolidate similar atoms intelligently
 - **TTL support** — atoms that expire automatically
@@ -59,13 +65,20 @@
                  │
 ┌────────────────▼────────────────────────────┐
 │          MCP Server (FastMCP)               │
-│      24 tools (recall, remember, ...)       │
+│      31 tools (recall, remember, ...)       │
 └────────────────┬────────────────────────────┘
                  │
 ┌────────────────▼────────────────────────────┐
 │             Engine Layer                     │
-│  hybrid ranking · decay · learning · merge  │
+│  hybrid ranking · graph recall · decay      │
 │  auto-bond · embeddings (Ollama)            │
+│  error memory · preferences · learning      │
+└────────────────┬────────────────────────────┘
+                 │
+┌────────────────▼────────────────────────────┐
+│       Cognitive Curator (curator.py)         │
+│  compact · bond pass · promotion detection   │
+│  merge detection · isolated classification   │
 └────────────────┬────────────────────────────┘
                  │
 ┌────────────────▼────────────────────────────┐
@@ -76,6 +89,7 @@
 ┌────────────────▼────────────────────────────┐
 │          SQLite (FTS5 + JSON1)              │
 │  atoms · bonds · versions · embeddings · Q&A│
+│  error_memory · session_offsets              │
 └─────────────────────────────────────────────┘
 ```
 
@@ -83,19 +97,20 @@
 
 | File | Purpose |
 |---|---|
-| `server.py` | MCP server — exposes 24 tools via FastMCP |
-| `db.py` | SQLite layer — CRUD, FTS, bonds, versions, embeddings |
-| `engine.py` | Hybrid ranking (BM25 + semantic), decay, similarity, gap detection |
+| `server.py` | MCP server — exposes 31 tools via FastMCP |
+| `db.py` | SQLite layer — CRUD, FTS, bonds, versions, embeddings, error memory |
+| `engine.py` | Hybrid ranking (BM25 + semantic), graph recall, decay, similarity, gap detection |
+| `curator.py` | Cognitive curator — compact, bonds, promotions, merges, isolated classification |
 | `embeddings.py` | Local embedding generation via Ollama (`nomic-embed-text`) |
 | `auto_bond.py` | Rule-based + semantic auto-bonding engine |
-| `learning.py` | Question generation (5 trigger types) |
+| `learning.py` | Question generation (5 trigger types, graph_gap opt-in) |
 | `session_watcher.py` | Watchdog-based session JSONL monitor with auto-digest |
 | `importer.py` | Markdown → SQLite one-way importer |
-| `schema.sql` | Database schema (atoms, bonds, FTS, versions, embeddings, offsets) |
+| `schema.sql` | Database schema (atoms, bonds, FTS, versions, embeddings, offsets, error_memory) |
 
-**~3,500 lines of Python.** Dependencies: `mcp` SDK, `watchdog`, `requests`.
+**~5,000 lines of Python.** Dependencies: `mcp` SDK, `watchdog`, `requests`.
 
-## 🔧 MCP Tools (24)
+## 🔧 MCP Tools (31)
 
 ### Memory Operations
 
@@ -135,12 +150,25 @@
 | Tool | Description |
 |---|---|
 | `stats` | Memory statistics (counts, domains, types) |
+| `memory_summary` | Hierarchical 3-level summary (global → domain → detail) |
+| `cognitive_status` | Graph health metrics (isolated atoms, bonds, gaps, stale) |
+| `working_set` | Task-oriented context pack (recall + graph + procedures) |
+| `curator_run` | Conservative curation pass (compact, bonds, classification) |
 | `version` | Get server version |
 | `decay_run` | Execute decay cycle (reduce unused atom weights) |
 | `learning_run` | Run learning engine (detect gaps, contradictions) |
 | `ask_pending` | Get pending human questions |
 | `answer_human` | Answer a pending question |
 | `import_markdown` | Import markdown files (bulk or single) |
+
+### Error Memory & Preferences
+
+| Tool | Description |
+|---|---|
+| `error_log` | Log a mistake and its correction (auto-promotes after 3+ occurrences) |
+| `error_check` | Check if a task has failed before (retrieve past errors) |
+| `error_list` | List recorded errors filtered by resolution status |
+| `preference_search` | Search preference atoms by category, scope, or free text |
 
 ## 📖 Usage Examples
 
@@ -255,6 +283,54 @@ Automatically discovers relationships between atoms:
 }
 ```
 
+## 🧠 Cognitive Curator
+
+The curator is a **conservative maintenance engine** that runs in dry-run mode by default. It never deletes durable atoms or rewrites markdown source.
+
+### Passes
+
+| Pass | What it does |
+|---|---|
+| **body_compact** | Generates extractive summaries for long atoms (>1200 chars) |
+| **bond_pass** | Suggests/creates rule-based bonds across active atoms |
+| **promotion** | Detects recurring session/daily concepts worth promoting to durable facts |
+| **merge** | Flags potential duplicates by normalized title |
+| **isolated_classification** | Classifies atoms without bonds into actionable states |
+
+### Isolated Atom States
+
+When `curator_run` runs, atoms without bonds are classified:
+
+| State | Meaning |
+|---|---|
+| `needs_link` | Durable, high-weight or frequently accessed — should be connected |
+| `standalone_ok` | Naturally standalone (preferences, explicitly allowed) |
+| `volatile_candidate` | Session/chat material or too new — let TTL/digest handle it |
+| `archive_candidate` | Old, never accessed — consider archiving |
+
+With `auto_apply=True`, the curator writes only **non-destructive metadata** (`isolated_state`, `isolated_reason`, `isolated_reviewed_at`). It never archives or deletes atoms automatically.
+
+> **v1.5.2 change:** `learning_run` no longer generates `graph_gap` pending questions by default. Isolated-atom review is handled entirely by the curator. Set `learning.graph_gap_enabled=true` in config to re-enable the old behavior.
+
+### Error Memory
+
+The error memory subsystem tracks mistakes and corrections:
+
+- **error_log** — record what went wrong and the fix
+- **error_check** — check before attempting a task if it has failed before
+- **error_list** — review resolved/unresolved errors
+- **Auto-promotion** — after 3+ occurrences, an error is promoted to a permanent preference rule automatically
+
+```python
+error_log(
+    mistake="Used dotnet build without --framework",
+    correction="Always use: dotnet build -f net48",
+    task_type="compilation",
+    error_category="logic_error",
+    severity="minor"
+)
+```
+
 ## 🚀 Quick Start
 
 ### Docker (recommended)
@@ -320,9 +396,15 @@ python server.py
 | FTS search | ❌ | ✅ (BM25) | ✅ (multi-factor) |
 | Semantic search | ❌ | ❌ | ✅ (Ollama) |
 | Hybrid ranking | ❌ | ❌ | ✅ (BM25 + semantic) |
+| Graph-aware recall | ❌ | ❌ | ✅ (bidirectional) |
 | Decay | ❌ | ❌ | ✅ |
 | Learning/Q&A | ❌ | ❌ | ✅ |
 | Auto-bonding | ❌ | ❌ | ✅ (rules + semantic) |
+| Cognitive curator | ❌ | ❌ | ✅ |
+| Isolated classification | ❌ | ❌ | ✅ |
+| Error memory | ❌ | ❌ | ✅ |
+| Structured preferences | ❌ | ❌ | ✅ |
+| Hierarchical summaries | ❌ | ❌ | ✅ |
 | Session watcher | ❌ | ❌ | ✅ (v2.1 + digests) |
 | Session digests | ❌ | ❌ | ✅ (auto-summary) |
 | Markdown import | ❌ | ❌ | ✅ |

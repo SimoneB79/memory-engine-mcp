@@ -20,6 +20,7 @@ COPY db.py .
 COPY engine.py .
 COPY embeddings.py .
 COPY auto_bond.py .
+COPY curator.py .
 COPY learning.py .
 COPY importer.py .
 COPY session_watcher.py .
