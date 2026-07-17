@@ -13,7 +13,8 @@
       "registryType": "oci",
       "identifier": "ghcr.io/simoneb79/memory-engine-mcp:1.5.2",
       "transport": {
-        "type": "sse"
+        "type": "sse",
+        "url": "http://localhost:8085/sse"
       },
       "environmentVariables": [
         {
