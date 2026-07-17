@@ -7,11 +7,11 @@
     "url": "https://github.com/SimoneB79/memory-engine-mcp",
     "source": "github"
   },
-  "version": "1.5.2",
+  "version": "1.5.3",
   "packages": [
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/simoneb79/memory-engine-mcp:1.5.2",
+      "identifier": "ghcr.io/simoneb79/memory-engine-mcp:1.5.3",
       "transport": {
         "type": "sse",
         "url": "http://localhost:8085/sse"
