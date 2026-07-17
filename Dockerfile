@@ -6,7 +6,7 @@ LABEL org.opencontainers.image.title="Memory Engine MCP"
 LABEL org.opencontainers.image.description="Local-first, graph-aware long-term memory MCP server for AI assistants"
 LABEL org.opencontainers.image.source="https://github.com/SimoneB79/memory-engine-mcp"
 LABEL org.opencontainers.image.licenses="MIT"
-LABEL io.modelcontextprotocol.server.name="io.github.simoneb79/memory-engine-mcp"
+LABEL io.modelcontextprotocol.server.name="io.github.SimoneB79/memory-engine-mcp"
 
 WORKDIR /app
 
