@@ -1,6 +1,6 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.simoneb79/memory-engine-mcp",
+  "name": "io.github.SimoneB79/memory-engine-mcp",
   "title": "Memory Engine MCP",
   "description": "Local-first graph memory for AI assistants with SQLite, semantic search, and MCP tools.",
   "repository": {
