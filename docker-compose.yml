@@ -1,17 +1,21 @@
-  # --- 8. MEMORY ENGINE MCP (Porta 8085) ---
+services:
   memory-engine:
-    build: ./memory-engine
+    build: .
     container_name: memory-engine
     restart: unless-stopped
-    expose:
-      - "8085"
+    ports:
+      - "8085:8085"
     volumes:
-      # DB SQLite persistente
-      - /home/sb/stacks/mcp-servers/memory-engine/data:/data
-      # Markdown memory in lettura (import one-way)
-      - /home/sb/openclaw/workspace/memory:/workspace/memory:ro
-      # OpenClaw sessions (read-only) — per session_watcher
-      - /home/sb/stacks/moltbot-simone/config/agents/main/sessions:/sessions:ro
+      # Persistent SQLite database and generated session digests
+      - memory-engine-data:/data
+
+      # Optional: import your existing markdown notes one-way
+      # Replace ./memory with your notes directory, or remove this mount.
+      - ./memory:/workspace/memory:ro
+
+      # Optional: OpenClaw session watcher input
+      # Replace ./sessions with your OpenClaw session JSONL directory, or remove this mount.
+      - ./sessions:/sessions:ro
     environment:
       - MEMORY_DB_PATH=/data/memory.db
       - MARKDOWN_SOURCE=/workspace/memory
@@ -19,5 +23,6 @@
       - MEMORY_PORT=8085
       - OPENCLAW_SESSIONS_DIR=/sessions
       - SESSION_DIGEST_DIR=/data/session_digests
-    networks:
-      - proxy
+
+volumes:
+  memory-engine-data:
