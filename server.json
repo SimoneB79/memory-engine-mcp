@@ -1,0 +1,44 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.SimoneB79/memory-engine-mcp",
+  "title": "Memory Engine MCP",
+  "description": "Local-first graph memory for AI assistants with SQLite, semantic search, and MCP tools.",
+  "repository": {
+    "url": "https://github.com/SimoneB79/memory-engine-mcp",
+    "source": "github"
+  },
+  "version": "1.5.3",
+  "packages": [
+    {
+      "registryType": "oci",
+      "identifier": "ghcr.io/simoneb79/memory-engine-mcp:1.5.3",
+      "transport": {
+        "type": "sse",
+        "url": "http://localhost:8085/sse"
+      },
+      "environmentVariables": [
+        {
+          "name": "MEMORY_DB_PATH",
+          "description": "SQLite database path inside the container.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "MARKDOWN_SOURCE",
+          "description": "Optional directory for one-way markdown import.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "MEMORY_PORT",
+          "description": "SSE server port. Default: 8085.",
+          "isRequired": false,
+          "format": "number",
+          "isSecret": false
+        }
+      ]
+    }
+  ]
+}
