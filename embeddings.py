@@ -172,7 +172,7 @@ class EmbeddingEngine:
         # Get atom metadata for filtering
         with self.db.conn() as c:
             rows = c.execute(
-                "SELECT id, title, domain, type, confidence, weight, status FROM atoms WHERE status = 'active'"
+                "SELECT id, title, domain, type, memory_tier, confidence, weight, status FROM atoms WHERE status = 'active'"
             ).fetchall()
             atom_meta = {r["id"]: dict(r) for r in rows}
 
@@ -192,6 +192,8 @@ class EmbeddingEngine:
                 "title": meta["title"],
                 "domain": meta["domain"],
                 "type": meta["type"],
+                "memory_tier": meta.get("memory_tier", "semantic"),
+                "status": meta.get("status", "active"),
                 "confidence": meta["confidence"],
                 "weight": meta["weight"],
                 "semantic_score": round(sim, 4),

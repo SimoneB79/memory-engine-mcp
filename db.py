@@ -49,8 +49,21 @@ class DB:
         """Add columns introduced after the initial release (idempotent)."""
         migrations = [
             ("content_hash", "TEXT"),
+            ("memory_tier", "TEXT NOT NULL DEFAULT 'semantic'"),
         ]
         with self.conn() as c:
+            # Older releases updated the FTS table on any atom update. Recreate the
+            # trigger so tier/status/meta migrations do not rewrite FTS content.
+            c.execute("DROP TRIGGER IF EXISTS atoms_fts_au")
+            c.execute(
+                """CREATE TRIGGER IF NOT EXISTS atoms_fts_au
+                   AFTER UPDATE OF title, body, tags ON atoms BEGIN
+                    INSERT INTO atoms_fts(atoms_fts, rowid, title, body, tags)
+                    VALUES ('delete', old.rowid, old.title, COALESCE(old.body, ''), old.tags);
+                    INSERT INTO atoms_fts(rowid, title, body, tags)
+                    VALUES (new.rowid, new.title, COALESCE(new.body, ''), new.tags);
+                   END"""
+            )
             for col, coltype in migrations:
                 # Check if column exists
                 cols = [r[1] for r in c.execute("PRAGMA table_info(atoms)").fetchall()]
@@ -58,7 +71,25 @@ class DB:
                     c.execute(f"ALTER TABLE atoms ADD COLUMN {col} {coltype}")
                     logger_obj = __import__('logging').getLogger('db')
                     logger_obj.info("Migration: added column atoms.%s", col)
-            # Index on content_hash for fast dedup
+            # Backfill 3-tier memory classification for existing atoms.
+            c.execute(
+                """UPDATE atoms SET memory_tier = 'procedural'
+                   WHERE memory_tier = 'semantic'
+                     AND (type IN ('preference', 'procedure')
+                          OR lower(domain) LIKE '%procedure%'
+                          OR lower(domain) LIKE '%procedures/%')"""
+            )
+            c.execute(
+                """UPDATE atoms SET memory_tier = 'episodic'
+                   WHERE memory_tier = 'semantic'
+                     AND (type IN ('log', 'event', 'session_msg', 'session_digest')
+                          OR lower(domain) LIKE 'daily/%'
+                          OR lower(domain) LIKE 'session/%')"""
+            )
+            # Indexes for migrated columns
+            c.execute(
+                "CREATE INDEX IF NOT EXISTS idx_atoms_memory_tier ON atoms(memory_tier)"
+            )
             c.execute(
                 "CREATE INDEX IF NOT EXISTS idx_atoms_content_hash ON atoms(content_hash)"
             )
@@ -77,10 +108,12 @@ class DB:
         source_path: str | None = None,
         ttl: int | None = None,
         meta: dict | None = None,
+        memory_tier: str | None = None,
         atom_id: str | None = None,
         content_hash: str | None = None,
     ) -> dict:
         atom_id = atom_id or self._slug(title) or str(uuid.uuid4())[:8]
+        memory_tier = memory_tier or self.infer_memory_tier(type=type, domain=domain, meta=meta)
         tags_json = json.dumps(tags or [])
         meta_json = json.dumps(meta or {})
         now = int(time.time())
@@ -89,14 +122,17 @@ class DB:
             # Version existing atom if update
             existing = c.execute("SELECT * FROM atoms WHERE id = ?", (atom_id,)).fetchone()
             if existing:
-                return self.update_atom(atom_id, title=title, body=body, confidence=confidence)
+                return self.update_atom(
+                    atom_id, title=title, body=body, confidence=confidence,
+                    memory_tier=memory_tier,
+                )
 
             c.execute(
                 """INSERT INTO atoms 
-                   (id, type, domain, title, body, confidence, source, source_path, 
+                   (id, type, memory_tier, domain, title, body, confidence, source, source_path, 
                     ttl, tags, meta, created_at, updated_at, accessed_at, content_hash)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (atom_id, type, domain, title, body, confidence, source, source_path,
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (atom_id, type, memory_tier, domain, title, body, confidence, source, source_path,
                  ttl, tags_json, meta_json, now, now, now, content_hash),
             )
             # Save initial version
@@ -117,6 +153,7 @@ class DB:
         status: str | None = None,
         type: str | None = None,
         domain: str | None = None,
+        memory_tier: str | None = None,
         tags: list[str] | None = None,
         meta: dict | None = None,
         changed_by: str = "ai",
@@ -144,7 +181,7 @@ class DB:
             for field, val in [
                 ("title", title), ("body", body), ("body_compact", body_compact),
                 ("confidence", confidence), ("weight", weight), ("status", status),
-                ("type", type), ("domain", domain),
+                ("type", type), ("domain", domain), ("memory_tier", memory_tier),
             ]:
                 if val is not None:
                     updates.append(f"{field} = ?")
@@ -202,6 +239,7 @@ class DB:
         status: str = "active",
         limit: int = 50,
         order_by: str = "weight",
+        memory_tier: str | None = None,
     ) -> list[dict]:
         query = "SELECT * FROM atoms WHERE status = ?"
         params: list = [status]
@@ -211,6 +249,9 @@ class DB:
         if type:
             query += " AND type = ?"
             params.append(type)
+        if memory_tier:
+            query += " AND memory_tier = ?"
+            params.append(memory_tier)
         query += f" ORDER BY {order_by} DESC LIMIT ?"
         params.append(limit)
         with self.conn() as c:
@@ -219,7 +260,13 @@ class DB:
 
     # ─── SEARCH ──────────────────────────────────────────────
 
-    def search_fts(self, query: str, limit: int = 10) -> list[dict]:
+    def search_fts(
+        self,
+        query: str,
+        limit: int = 10,
+        statuses: tuple[str, ...] = ("active",),
+        memory_tier: str | None = None,
+    ) -> list[dict]:
         """Full-text search with BM25 ranking."""
         # Escape FTS special chars
         clean = re.sub(r'["\'\*\:\(\)\-\^]', " ", query).strip()
@@ -229,15 +276,24 @@ class DB:
         if not fts_query:
             return []
 
+        statuses = statuses or ("active",)
+        status_placeholders = ",".join("?" for _ in statuses)
+        params: list = [fts_query, *statuses]
+        tier_clause = ""
+        if memory_tier:
+            tier_clause = " AND a.memory_tier = ?"
+            params.append(memory_tier)
+        params.append(limit)
+
         with self.conn() as c:
             rows = c.execute(
-                """SELECT a.*, bm25(atoms_fts) as fts_score
+                f"""SELECT a.*, bm25(atoms_fts) as fts_score
                    FROM atoms_fts 
                    JOIN atoms a ON atoms_fts.rowid = a.rowid
-                   WHERE atoms_fts MATCH ? AND a.status = 'active'
-                   ORDER BY fts_score
+                   WHERE atoms_fts MATCH ? AND a.status IN ({status_placeholders}){tier_clause}
+                   ORDER BY CASE a.status WHEN 'active' THEN 0 ELSE 1 END, fts_score
                    LIMIT ?""",
-                (fts_query, limit),
+                params,
             ).fetchall()
             return [dict(r) for r in rows]
 
@@ -651,6 +707,248 @@ class DB:
             return cur.rowcount > 0
 
     # ─── UTILS ───────────────────────────────────────────────
+
+    # ─── MEMORY TIERS / CONTRADICTIONS ─────────────────────────
+
+    @staticmethod
+    def infer_memory_tier(type: str = "fact", domain: str = "general", meta: dict | None = None) -> str:
+        """Infer the 3-tier memory class from existing atom shape."""
+        if meta and meta.get("memory_tier") in {"episodic", "semantic", "procedural"}:
+            return meta["memory_tier"]
+        t = (type or "").lower()
+        d = (domain or "").lower()
+        if t in {"preference", "procedure"} or "procedure" in d or "procedures/" in d:
+            return "procedural"
+        if t in {"log", "event", "session_msg", "session_digest"} or d.startswith("daily/") or d.startswith("session/"):
+            return "episodic"
+        return "semantic"
+
+    @staticmethod
+    def _json_loads(value, default):
+        if isinstance(value, (dict, list)):
+            return value
+        try:
+            return json.loads(value or json.dumps(default))
+        except (TypeError, json.JSONDecodeError):
+            return default
+
+    def create_contradiction(
+        self,
+        old_atom_id: str,
+        title: str,
+        body: str = "",
+        reason: str = "",
+        type: str | None = None,
+        domain: str | None = None,
+        confidence: float = 0.8,
+        tags: list[str] | None = None,
+        memory_tier: str | None = None,
+        created_by: str = "ai",
+        resolution: str = "superseded",
+        meta: dict | None = None,
+        new_atom_id: str | None = None,
+    ) -> dict:
+        """
+        Insert a new atom that supersedes/contradicts an old one.
+
+        The old atom is kept recoverable with status='superseded'. Recall defaults
+        keep preferring active atoms; graph/history tools can still retrieve both.
+        """
+        now = int(time.time())
+        cid = f"contradiction_{old_atom_id}_{now}"
+
+        with self.conn() as c:
+            old = c.execute("SELECT * FROM atoms WHERE id = ?", (old_atom_id,)).fetchone()
+            if not old:
+                raise KeyError(f"Atom '{old_atom_id}' not found")
+
+            old_meta = self._json_loads(old["meta"], {})
+            old_tags = self._json_loads(old["tags"], [])
+            new_type = type or old["type"]
+            new_domain = domain or old["domain"]
+            new_tier = memory_tier or self.infer_memory_tier(new_type, new_domain, meta)
+            new_meta = dict(meta or {})
+            new_meta.update({
+                "contradicts_atom_id": old_atom_id,
+                "contradiction_id": cid,
+                "supersedes_atom_id": old_atom_id,
+                "memory_tier": new_tier,
+            })
+            if reason:
+                new_meta["contradiction_reason"] = reason
+            new_tags = tags if tags is not None else sorted(set(old_tags + ["contradiction", "supersedes"]))
+            new_id = new_atom_id or self._slug(title) or str(uuid.uuid4())[:8]
+            if c.execute("SELECT 1 FROM atoms WHERE id = ?", (new_id,)).fetchone():
+                new_id = f"{new_id}_{str(uuid.uuid4())[:6]}"
+
+            c.execute(
+                """INSERT INTO atoms
+                   (id, type, memory_tier, domain, title, body, confidence, status, source,
+                    ttl, tags, meta, created_at, updated_at, accessed_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    new_id, new_type, new_tier, new_domain, title, body, confidence,
+                    created_by, old["ttl"], json.dumps(new_tags), json.dumps(new_meta),
+                    now, now, now,
+                ),
+            )
+            c.execute(
+                "INSERT INTO atom_versions (atom_id, version, title, body, changed_by, change_reason) VALUES (?, 1, ?, ?, ?, ?)",
+                (new_id, title, body, created_by, f"Contradicts/supersedes {old_atom_id}"),
+            )
+
+            old_meta.update({
+                "superseded_by": new_id,
+                "contradiction_id": cid,
+                "superseded_at": now,
+            })
+            if reason:
+                old_meta["superseded_reason"] = reason
+            ver_row = c.execute(
+                "SELECT MAX(version) as v FROM atom_versions WHERE atom_id = ?", (old_atom_id,)
+            ).fetchone()
+            next_ver = (ver_row["v"] or 0) + 1
+            c.execute(
+                "INSERT INTO atom_versions (atom_id, version, title, body, changed_by, change_reason) VALUES (?, ?, ?, ?, ?, ?)",
+                (old_atom_id, next_ver, old["title"], old["body"], created_by, f"Superseded by {new_id}"),
+            )
+            c.execute(
+                "UPDATE atoms SET status = 'superseded', meta = ?, updated_at = ? WHERE id = ?",
+                (json.dumps(old_meta), now, old_atom_id),
+            )
+            c.execute(
+                """INSERT INTO memory_contradictions
+                   (id, old_atom_id, new_atom_id, reason, resolution, created_at, created_by, meta)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (cid, old_atom_id, new_id, reason, resolution, now, created_by, json.dumps(meta or {})),
+            )
+            for relation, evidence, strength in [
+                ("contradicts", reason or "Explicit contradiction", 0.95),
+                ("supersedes", reason or "Newer memory supersedes older atom", 1.0),
+            ]:
+                c.execute(
+                    """INSERT OR REPLACE INTO bonds (from_id, to_id, relation, strength, evidence)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (new_id, old_atom_id, relation, strength, evidence),
+                )
+
+        return self.get_contradiction(cid)
+
+    def get_contradiction(self, contradiction_id: str) -> dict | None:
+        with self.conn() as c:
+            row = c.execute(
+                "SELECT * FROM memory_contradictions WHERE id = ?", (contradiction_id,)
+            ).fetchone()
+            if not row:
+                return None
+            item = dict(row)
+            item["meta"] = self._json_loads(item.get("meta"), {})
+            item["old_atom"] = self.get_atom(item["old_atom_id"])
+            item["new_atom"] = self.get_atom(item["new_atom_id"])
+            return item
+
+    def get_impact(self, atom_id: str, depth: int = 2) -> dict | None:
+        """
+        Impact analysis: find all atoms that depend on or are related to this atom.
+        Traverses bonds up to `depth` hops and collects contradictions.
+        """
+        with self.conn() as c:
+            root = c.execute("SELECT * FROM atoms WHERE id = ?", (atom_id,)).fetchone()
+            if not root:
+                return None
+            root = dict(root)
+
+        visited = {atom_id}
+        frontier = {atom_id}
+        edges: list[dict] = []
+        nodes: dict[str, dict] = {atom_id: {
+            "id": atom_id, "title": root["title"], "type": root.get("type"),
+            "domain": root.get("domain"), "status": root.get("status", "active"),
+            "memory_tier": root.get("memory_tier", "semantic"),
+        }}
+
+        for hop in range(depth):
+            next_frontier: set[str] = set()
+            if not frontier:
+                break
+            placeholders = ",".join("?" for _ in frontier)
+            with self.conn() as c:
+                rows = c.execute(
+                    f"SELECT from_id, to_id, relation, strength, evidence "
+                    f"FROM bonds WHERE from_id IN ({placeholders}) OR to_id IN ({placeholders})",
+                    (*frontier, *frontier),
+                ).fetchall()
+            for r in rows:
+                r = dict(r)
+                edges.append(r)
+                neighbor = r["to_id"] if r["from_id"] in frontier else r["from_id"]
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    next_frontier.add(neighbor)
+                    if neighbor not in nodes:
+                        with self.conn() as c:
+                            a = c.execute("SELECT id, title, type, domain, status, memory_tier FROM atoms WHERE id = ?", (neighbor,)).fetchone()
+                        if a:
+                            a = dict(a)
+                            nodes[neighbor] = {
+                                "id": a["id"], "title": a["title"], "type": a.get("type"),
+                                "domain": a.get("domain"), "status": a.get("status", "active"),
+                                "memory_tier": a.get("memory_tier", "semantic"),
+                            }
+                        else:
+                            nodes[neighbor] = {"id": neighbor, "title": "(missing)", "status": "missing"}
+            frontier = next_frontier
+
+        # Deduplicate edges
+        seen_edges = set()
+        unique_edges = []
+        for e in edges:
+            key = (e["from_id"], e["to_id"], e["relation"])
+            if key not in seen_edges:
+                seen_edges.add(key)
+                unique_edges.append(e)
+
+        # Contradictions involving this atom
+        contradictions = self.list_contradictions(atom_id=atom_id, limit=20)
+
+        # Summary by relation type
+        rel_counts: dict[str, int] = {}
+        for e in unique_edges:
+            rel_counts[e["relation"]] = rel_counts.get(e["relation"], 0) + 1
+
+        # Direct dependents (atoms that point TO this one)
+        direct_dependents = [
+            e["from_id"] for e in unique_edges
+            if e["to_id"] == atom_id and e["from_id"] != atom_id
+        ]
+
+        return {
+            "atom_id": atom_id,
+            "title": root["title"],
+            "status": root.get("status", "active"),
+            "memory_tier": root.get("memory_tier", "semantic"),
+            "depth": depth,
+            "total_nodes": len(nodes) - 1,
+            "total_edges": len(unique_edges),
+            "direct_dependents": len(direct_dependents),
+            "contradictions_count": len(contradictions),
+            "relation_breakdown": rel_counts,
+            "nodes": list(nodes.values()),
+            "edges": unique_edges,
+            "contradictions": contradictions,
+        }
+
+    def list_contradictions(self, atom_id: str | None = None, limit: int = 20) -> list[dict]:
+        query = "SELECT * FROM memory_contradictions"
+        params: list = []
+        if atom_id:
+            query += " WHERE old_atom_id = ? OR new_atom_id = ?"
+            params.extend([atom_id, atom_id])
+        query += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+        with self.conn() as c:
+            rows = c.execute(query, params).fetchall()
+            return [dict(r) for r in rows]
 
     def _slug(self, text: str) -> str:
         """Create a readable slug from title."""

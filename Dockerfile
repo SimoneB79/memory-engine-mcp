@@ -25,6 +25,7 @@ COPY learning.py .
 COPY importer.py .
 COPY session_watcher.py .
 COPY server.py .
+COPY web_ui.py .
 COPY config.json .
 
 # Persistent SQLite DB
@@ -36,9 +37,10 @@ VOLUME /sessions
 
 VOLUME /workspace
 
-EXPOSE 8087
+# MCP (8085) + Web UI (default 8091, override via MEM_UI_PORT env)
+EXPOSE 8085 8091 8092 8093
 
 HEALTHCHECK --interval=60s --timeout=5s --retries=3 \
-    CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:8087/sse', timeout=3)" || exit 0
+    CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:8085/sse', timeout=3)" || exit 1
 
-CMD ["python3", "server.py"]
+CMD ["sh", "-c", "python3 web_ui.py & python3 server.py"]

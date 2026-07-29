@@ -4,6 +4,7 @@ Ranking, similarity, merge detection, gap detection.
 """
 import time
 import math
+import json
 from db import DB
 
 
@@ -25,6 +26,17 @@ class Engine:
         w_conf = cfg.get("confidence_weight", 0.20)
         w_recency = cfg.get("recency_weight", 0.10)
         w_weight = cfg.get("weight_factor", 0.10)
+        tier_boosts = cfg.get("tier_boosts", {
+            "semantic": 0.04,
+            "procedural": 0.03,
+            "episodic": 0.0,
+        })
+        status_penalties = cfg.get("status_penalties", {
+            "superseded": -0.25,
+            "archived": -0.15,
+            "stale": -0.10,
+            "merged": -0.35,
+        })
 
         now = int(time.time())
         scored = []
@@ -51,6 +63,9 @@ class Engine:
             # Weight: normalize 0-2 to 0-1
             weight_norm = min(1.0, row.get("weight", 1.0) / 2.0)
 
+            tier_boost = tier_boosts.get(row.get("memory_tier", "semantic"), 0.0)
+            status_penalty = status_penalties.get(row.get("status", "active"), 0.0)
+
             # Combined score
             score = (
                 w_fts * fts_norm
@@ -58,7 +73,10 @@ class Engine:
                 + w_conf * conf
                 + w_recency * recency
                 + w_weight * weight_norm
+                + tier_boost
+                + status_penalty
             )
+            score = max(0.0, min(1.0, score))
 
             row["rank_score"] = round(score, 4)
             row["rank_breakdown"] = {
@@ -67,6 +85,8 @@ class Engine:
                 "confidence": round(conf, 3),
                 "recency": round(recency, 3),
                 "weight": round(weight_norm, 3),
+                "tier_boost": round(tier_boost, 3),
+                "status_penalty": round(status_penalty, 3),
                 "final": round(score, 4),
             }
             scored.append(row)
@@ -78,12 +98,28 @@ class Engine:
 
     def recall(self, query: str, limit: int = 5, min_weight: float = 0.0,
                domain: str | None = None, semantic: bool = True,
-               embeddings=None) -> list[dict]:
+               embeddings=None, memory_tier: str | None = None,
+               include_superseded: bool = False) -> list[dict]:
         """
-        Smart recall: FTS search + optional semantic search + multi-factor ranking.
+        Smart recall: FTS + semantic search + graph expansion.
+
+        Direct hits are ranked first, then the graph is traversed from the best
+        hits so connected facts/procedures/decisions can surface even when they
+        do not directly match the query text.
         """
-        # Get FTS results (fetch more, then filter)
-        fts_results = self.db.search_fts(query, limit=limit * 3)
+        graph_cfg = self.config.get("graph_recall", {})
+        graph_enabled = graph_cfg.get("enabled", True)
+        graph_seed_limit = max(1, graph_cfg.get("seed_limit", 3))
+        graph_neighbor_limit = max(0, graph_cfg.get("neighbors_per_seed", 4))
+        graph_weight = graph_cfg.get("graph_weight", 0.55)
+        graph_min_strength = graph_cfg.get("min_strength", 0.35)
+
+        # Get FTS results (fetch more, then filter). Superseded atoms are
+        # opt-in: they remain recoverable as history without crowding normal recall.
+        statuses = ("active", "superseded") if include_superseded else ("active",)
+        fts_results = self.db.search_fts(
+            query, limit=limit * 3, statuses=statuses, memory_tier=memory_tier,
+        )
 
         # Semantic search (optional)
         sem_results = []
@@ -91,8 +127,11 @@ class Engine:
             sem_raw = embeddings.semantic_search(
                 query, limit=limit * 3, domain=domain, min_weight=min_weight,
             )
-            # Normalize to same format as fts_results
             for r in sem_raw:
+                if memory_tier and r.get("memory_tier") != memory_tier:
+                    continue
+                if not include_superseded and r.get("status", "active") != "active":
+                    continue
                 r["fts_score"] = None
                 r["semantic_score"] = r.pop("semantic_score")
                 sem_results.append(r)
@@ -102,10 +141,13 @@ class Engine:
         for r in fts_results:
             merged[r["id"]] = r
             merged[r["id"]]["semantic_score"] = None
+            merged[r["id"]]["match_kind"] = "direct"
         for r in sem_results:
             if r["id"] in merged:
                 merged[r["id"]]["semantic_score"] = r.get("semantic_score")
+                merged[r["id"]]["match_kind"] = "direct+semantic"
             else:
+                r["match_kind"] = "semantic"
                 merged[r["id"]] = r
 
         # Filter by weight and domain
@@ -115,27 +157,136 @@ class Engine:
                 continue
             if domain and r.get("domain") != domain:
                 continue
+            if memory_tier and r.get("memory_tier") != memory_tier:
+                continue
+            if not include_superseded and r.get("status", "active") != "active":
+                continue
             filtered.append(r)
 
-        # Rank
+        # Rank direct hits
         ranked = self.rank_results(filtered, query)
 
-        # Return top N with compact body
-        results = []
-        for r in ranked[:limit]:
-            results.append({
-                "id": r["id"],
-                "title": r["title"],
-                "body": r.get("body_compact") or r.get("body", ""),
-                "domain": r["domain"],
-                "type": r["type"],
-                "confidence": r["confidence"],
-                "weight": r["weight"],
-                "rank_score": r["rank_score"],
-                "semantic_score": r.get("semantic_score"),
-                "tags": __import__("json").loads(r.get("tags") or "[]"),
-            })
-        return results
+        # Reason over graph neighbors from top direct hits
+        if graph_enabled and graph_neighbor_limit > 0 and ranked:
+            ranked = self._expand_graph_context(
+                ranked=ranked,
+                limit=limit,
+                domain=domain,
+                min_weight=min_weight,
+                seed_limit=graph_seed_limit,
+                neighbor_limit=graph_neighbor_limit,
+                graph_weight=graph_weight,
+                min_strength=graph_min_strength,
+            )
+
+        return [self._format_recall_result(r) for r in ranked[:limit]]
+
+    def _expand_graph_context(
+        self,
+        ranked: list[dict],
+        limit: int,
+        domain: str | None,
+        min_weight: float,
+        seed_limit: int,
+        neighbor_limit: int,
+        graph_weight: float,
+        min_strength: float,
+    ) -> list[dict]:
+        """Add/boost graph neighbors connected to the best direct recall hits."""
+        by_id = {r["id"]: r for r in ranked}
+        expanded = list(ranked)
+
+        for seed in ranked[:seed_limit]:
+            neighbors = self.db.get_related_atoms(
+                seed["id"], limit=neighbor_limit, min_strength=min_strength,
+            )
+            for n in neighbors:
+                if n.get("weight", 1.0) < min_weight:
+                    continue
+                if domain and n.get("domain") != domain:
+                    continue
+                if n.get("status", "active") != "active":
+                    continue
+
+                relation_score = seed["rank_score"] * n.get("strength", 0.5) * graph_weight
+                relation_score *= min(1.0, n.get("weight", 1.0) / 2.0)
+                relation_score = round(relation_score, 4)
+                reason = {
+                    "via_atom": seed["id"],
+                    "via_title": seed.get("title"),
+                    "relation": n.get("relation"),
+                    "direction": n.get("direction"),
+                    "strength": n.get("strength"),
+                    "evidence": n.get("evidence"),
+                }
+
+                if n["id"] in by_id:
+                    existing = by_id[n["id"]]
+                    if relation_score > existing.get("graph_score", 0):
+                        existing["graph_score"] = relation_score
+                        existing["graph_reason"] = reason
+                    existing["rank_score"] = round(
+                        min(1.0, existing["rank_score"] + relation_score * 0.25), 4,
+                    )
+                    existing["match_kind"] = existing.get("match_kind", "direct") + "+graph"
+                else:
+                    n["fts_score"] = None
+                    n["semantic_score"] = None
+                    n["rank_score"] = relation_score
+                    n["rank_breakdown"] = {
+                        "direct": 0.0,
+                        "graph": relation_score,
+                        "final": relation_score,
+                    }
+                    n["match_kind"] = "graph"
+                    n["graph_score"] = relation_score
+                    n["graph_reason"] = reason
+                    by_id[n["id"]] = n
+                    expanded.append(n)
+
+        expanded.sort(key=lambda x: x["rank_score"], reverse=True)
+        return expanded[: max(limit, len(ranked))]
+
+    @staticmethod
+    def _safe_tags(raw_tags) -> list:
+        if isinstance(raw_tags, list):
+            return raw_tags
+        try:
+            return json.loads(raw_tags or "[]")
+        except (TypeError, json.JSONDecodeError):
+            return []
+
+    def _format_recall_result(self, r: dict) -> dict:
+        result = {
+            "id": r["id"],
+            "title": r["title"],
+            "body": r.get("body_compact") or r.get("body", ""),
+            "domain": r["domain"],
+            "type": r["type"],
+            "memory_tier": r.get("memory_tier", "semantic"),
+            "status": r.get("status", "active"),
+            "confidence": r["confidence"],
+            "weight": r["weight"],
+            "rank_score": r["rank_score"],
+            "semantic_score": r.get("semantic_score"),
+            "match_kind": r.get("match_kind", "direct"),
+            "tags": self._safe_tags(r.get("tags")),
+        }
+        meta = r.get("meta")
+        if isinstance(meta, str):
+            try:
+                meta = json.loads(meta or "{}")
+            except json.JSONDecodeError:
+                meta = {}
+        if isinstance(meta, dict):
+            if meta.get("superseded_by"):
+                result["superseded_by"] = meta["superseded_by"]
+            if meta.get("supersedes_atom_id"):
+                result["supersedes_atom_id"] = meta["supersedes_atom_id"]
+        if r.get("graph_reason"):
+            result["graph_reason"] = r["graph_reason"]
+            result["graph_score"] = r.get("graph_score")
+        return result
 
     # ─── SIMILARITY ──────────────────────────────────────────
 
@@ -260,6 +411,57 @@ class Engine:
                 (min_chars,),
             ).fetchall()
             return [dict(r) for r in rows]
+
+    def detect_graph_gaps(self) -> list[dict]:
+        """Find important durable atoms that are isolated in the knowledge graph."""
+        cfg = self.config.get("learning", {})
+        min_weight = cfg.get("graph_gap_min_weight", 0.6)
+        limit = cfg.get("graph_gap_limit", 20)
+        allowed_types = tuple(cfg.get(
+            "graph_gap_types",
+            ["fact", "decision", "procedure", "preference", "project", "note"],
+        ))
+        excluded_domain_prefixes = tuple(cfg.get(
+            "graph_gap_excluded_domain_prefixes",
+            ["daily/", "session/"],
+        ))
+
+        placeholders = ",".join("?" for _ in allowed_types)
+        with self.db.conn() as c:
+            rows = c.execute(
+                f"""SELECT a.*
+                    FROM atoms a
+                    LEFT JOIN bonds bo ON bo.from_id = a.id OR bo.to_id = a.id
+                    WHERE a.status = 'active'
+                      AND a.weight >= ?
+                      AND a.type IN ({placeholders})
+                      AND bo.from_id IS NULL
+                    ORDER BY a.weight DESC, a.access_count DESC
+                    LIMIT ?""",
+                (min_weight, *allowed_types, limit * 3),
+            ).fetchall()
+
+        result = []
+        for r in rows:
+            atom = dict(r)
+            domain = atom.get("domain") or ""
+            title = atom.get("title") or ""
+            if domain.startswith(excluded_domain_prefixes):
+                continue
+            if title.lower().startswith(("diario", "daily ")):
+                continue
+            if __import__("re").fullmatch(r"20\d{2}-\d{2}-\d{2}", title.strip()):
+                continue
+            try:
+                meta = json.loads(atom.get("meta") or "{}")
+            except (TypeError, json.JSONDecodeError):
+                meta = {}
+            if meta.get("allow_isolated"):
+                continue
+            result.append(atom)
+            if len(result) >= limit:
+                break
+        return result
 
     # ─── ERROR AUTO-PROMOTION ────────────────────────────────
 

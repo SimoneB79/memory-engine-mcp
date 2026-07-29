@@ -5,6 +5,59 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] — 2026-07-29
+
+### Contradiction Management & 3-Tier Memory
+
+This release introduces explicit contradiction/supersession handling and a
+3-tier memory classification system, plus a new impact analysis tool and an
+optional web UI for graph exploration.
+
+#### New Features
+
+- **`memory_tier` column** — every atom is classified as:
+  - `episodic` — logs, events, session messages, daily entries
+  - `semantic` — facts, decisions, consolidated knowledge
+  - `procedural` — preferences, procedures, standing rules
+  - Inferred automatically from `type`/`domain`; overridable via `remember(memory_tier=...)`.
+  - Migration backfills existing atoms idempotently.
+
+- **Contradiction management** — new `memory_contradictions` table:
+  - `memory_contradict(old_atom_id, ...)` — creates a new active atom, marks
+    the old one as `status='superseded'`, links both with `contradicts` and
+    `supersedes` bonds.
+  - `list_contradictions(atom_id)` — lists contradiction records.
+  - Recall excludes superseded atoms by default;
+    `include_superseded=True` recovers history.
+
+- **`memory_impact(atom_id, depth)`** — traverses bonds up to N hops, returns
+  connected nodes, edges, direct dependents, contradiction chains, and a
+  relation-type breakdown. Useful before updating or deleting an atom.
+
+- **`classify_memory_tier(type, domain, meta)`** — infers tier without
+  creating an atom.
+
+- **Web UI (`web_ui.py`)** — optional HTTP server (default port 6000) with:
+  - Interactive graph visualization (circle layout, status/tier colors)
+  - Atom detail panel with impact analysis
+  - Contradiction browser
+  - Stats dashboard (atoms, bonds, tiers, domains)
+  - Full-text search
+
+#### Ranking Improvements
+
+- `tier_boosts` and `status_penalties` in ranking config.
+- Superseded atoms receive a -0.25 score penalty.
+- Semantic tier gets +0.04, procedural +0.03 boost.
+
+#### Infrastructure
+
+- **Pin `mcp>=1.3.0,<2.0.0`** — MCP 2.x removes `mcp.server.fastmcp`.
+- **FTS trigger fix** — migration recreates the `atoms_fts_au` trigger to fire
+  only on `title/body/tags` changes, not on status/meta/tier updates.
+- Dockerfile supports dual process (MCP server + optional UI).
+- `docker-compose.yml` updated with correct ports.
+
 ## [1.5.2] — 2026-07-14
 
 ### Graph-Gap Moved to Curator

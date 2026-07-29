@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 # ─── Version ────────────────────────────────────────────────
 
-__version__ = "1.3.0"
+__version__ = "1.6.0"
 
 from db import DB
 from engine import Engine
@@ -24,6 +24,7 @@ from importer import MarkdownImporter
 from session_watcher import SessionWatcher
 from embeddings import EmbeddingEngine
 from auto_bond import AutoBondEngine
+from curator import CognitiveCurator
 
 # ─── Config ──────────────────────────────────────────────────
 
@@ -77,6 +78,7 @@ learning = Learning(db, engine, config)
 importer = MarkdownImporter(db, MD_SOURCE)
 embeddings = EmbeddingEngine(db, config)
 auto_bond_engine = AutoBondEngine(db, embeddings, config)
+curator = CognitiveCurator(db, engine, learning, auto_bond_engine, config)
 
 # Start session watcher (background, watchdog + polling)
 session_watcher = SessionWatcher(
@@ -213,6 +215,7 @@ def remember(
     confidence: float = 0.5,
     tags: list[str] | None = None,
     ttl_days: int | None = None,
+    memory_tier: str | None = None,
 ) -> str:
     """
     Create or update a memory atom.
@@ -225,6 +228,7 @@ def remember(
         confidence: 0.0 (hypothesis) to 1.0 (verified)
         tags: List of tags for categorization
         ttl_days: Optional TTL in days (None = permanent)
+        memory_tier: Optional 3-tier class: episodic, semantic, procedural
     
     Returns:
         JSON string with created atom info
@@ -238,6 +242,7 @@ def remember(
         confidence=confidence,
         tags=tags,
         source="ai",
+        memory_tier=memory_tier,
         ttl=ttl,
     )
     # Async embedding (non-blocking — background thread)
@@ -250,13 +255,38 @@ def remember(
             except Exception as e:
                 print(f"[embed_bg] error for {atom['id']}: {e}", file=sys.stderr)
         threading.Thread(target=_bg_embed, daemon=True).start()
+
+    # Immediate rule-based auto-bonding. Semantic bonds are still available via
+    # suggest_bonds after the embedding is indexed; remember stays low-latency.
+    auto_bonds = []
+    ab_cfg = config.get("auto_bond", {})
+    if ab_cfg.get("auto_apply_on_remember", True):
+        try:
+            min_conf = ab_cfg.get("auto_apply_min_confidence", 0.65)
+            max_apply = ab_cfg.get("max_auto_apply", 5)
+            suggestions = auto_bond_engine.suggest_bonds_for_atom(
+                atom["id"], auto_apply=False, skip_semantic=True,
+            )
+            auto_bonds = [s for s in suggestions if s.get("confidence", 0) >= min_conf][:max_apply]
+            for b in auto_bonds:
+                db.create_bond(
+                    b["from_id"], b["to_id"], b["relation"],
+                    b["confidence"], b["reason"],
+                )
+        except Exception as e:
+            print(f"[auto_bond] error for {atom['id']}: {e}", file=sys.stderr)
+            auto_bonds = []
+
     return json.dumps({
         "status": "created",
         "id": atom["id"],
         "title": atom["title"],
         "domain": atom["domain"],
         "type": atom["type"],
+        "memory_tier": atom.get("memory_tier"),
         "embedding_queued": embeddings.enabled,
+        "auto_bonds_created": len(auto_bonds),
+        "auto_bonds": auto_bonds,
     }, ensure_ascii=False)
 
 
@@ -267,6 +297,8 @@ def recall(
     min_weight: float = 0.0,
     domain: str | None = None,
     semantic: bool = True,
+    memory_tier: str | None = None,
+    include_superseded: bool = False,
 ) -> str:
     """
     Smart recall: search memory with multi-factor ranking.
@@ -278,6 +310,8 @@ def recall(
         min_weight: Filter out low-weight atoms
         domain: Filter by domain
         semantic: If True (default), also use semantic search via Ollama
+        memory_tier: Optional filter: episodic, semantic, procedural
+        include_superseded: Include historical superseded atoms (default False)
     
     Returns:
         JSON string with ranked results
@@ -285,8 +319,103 @@ def recall(
     results = engine.recall(
         query, limit=limit, min_weight=min_weight, domain=domain,
         semantic=semantic, embeddings=embeddings if semantic else None,
+        memory_tier=memory_tier, include_superseded=include_superseded,
     )
     return json.dumps(results, ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
+def memory_contradict(
+    old_atom_id: str,
+    title: str,
+    body: str = "",
+    reason: str = "",
+    type: str | None = None,
+    domain: str | None = None,
+    confidence: float = 0.8,
+    tags: list[str] | None = None,
+    memory_tier: str | None = None,
+) -> str:
+    """
+    Supersede an existing atom with a newer contradictory memory.
+
+    The old atom is kept with status='superseded' and linked to the new atom via
+    'contradicts' and 'supersedes' bonds. Normal recall prefers the new active
+    atom; pass include_superseded=True to recall when you need history.
+    """
+    try:
+        result = db.create_contradiction(
+            old_atom_id=old_atom_id,
+            title=title,
+            body=body,
+            reason=reason,
+            type=type,
+            domain=domain,
+            confidence=confidence,
+            tags=tags,
+            memory_tier=memory_tier,
+            created_by="ai",
+        )
+        # Queue embedding for the new atom only.
+        new_atom = result.get("new_atom") if isinstance(result, dict) else None
+        if embeddings.enabled and new_atom:
+            def _bg_embed_contradiction():
+                try:
+                    emb = embeddings.embed_atom(new_atom)
+                    if emb:
+                        embeddings.store_embedding(new_atom["id"], emb)
+                        embeddings.invalidate_cache()
+                except Exception as e:
+                    print(f"[embed_bg] error for contradiction {new_atom.get('id')}: {e}", file=sys.stderr)
+            threading.Thread(target=_bg_embed_contradiction, daemon=True).start()
+        return json.dumps({"status": "contradiction_created", **result}, ensure_ascii=False, indent=2)
+    except KeyError as e:
+        return json.dumps({"error": str(e)}, ensure_ascii=False)
+
+
+@mcp.tool()
+def list_contradictions(atom_id: str | None = None, limit: int = 20) -> str:
+    """
+    List explicit contradiction/supersession records.
+
+    Args:
+        atom_id: Optional atom id to filter old/new side of contradictions.
+        limit: Max records to return.
+    """
+    return json.dumps(db.list_contradictions(atom_id=atom_id, limit=limit), ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
+def memory_impact(atom_id: str, depth: int = 2) -> str:
+    """
+    Impact analysis: find all atoms that depend on or are related to this atom.
+    Traverses bonds up to `depth` hops and collects contradictions.
+
+    Useful before updating or deleting an atom — shows what will be affected.
+
+    Args:
+        atom_id: The atom to analyze
+        depth: Graph traversal depth (default 2, max 5)
+    """
+    result = db.get_impact(atom_id, depth=min(depth, 5))
+    if result is None:
+        return json.dumps({"error": f"Atom '{atom_id}' not found"}, ensure_ascii=False)
+    return json.dumps(result, ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
+def classify_memory_tier(type: str = "fact", domain: str = "general", meta: dict | None = None) -> str:
+    """
+    Infer the 3-tier memory class for a prospective atom.
+
+    Tiers: episodic (events/logs/session traces), semantic (facts/decisions),
+    procedural (preferences/procedures/standing rules).
+    """
+    return json.dumps({
+        "type": type,
+        "domain": domain,
+        "memory_tier": db.infer_memory_tier(type=type, domain=domain, meta=meta),
+    }, ensure_ascii=False)
 
 
 @mcp.tool()
@@ -314,6 +443,20 @@ def unlink(from_id: str, to_id: str, relation: str) -> str:
     """Remove a bond between two atoms."""
     ok = db.delete_bond(from_id, to_id, relation)
     return json.dumps({"status": "unlinked" if ok else "not_found"})
+
+
+@mcp.tool()
+def delete_atom(atom_id: str) -> str:
+    """
+    Delete an atom from the Memory Engine.
+    
+    This permanently removes the atom and all bonds connected to it.
+    """
+    ok = db.delete_atom(atom_id)
+    return json.dumps({
+        "status": "deleted" if ok else "not_found",
+        "atom_id": atom_id
+    })
 
 
 @mcp.tool()
@@ -463,7 +606,8 @@ def search_graph(atom_id: str, depth: int = 2, relation: str | None = None) -> s
 def learning_run() -> str:
     """
     Run the learning engine: detect contradictions, weak atoms, merge 
-    candidates, decay, and gaps. Creates human questions for findings.
+    candidates, decay, and content gaps. Creates human questions for findings.
+    Graph-gap/isolation review is handled by curator_run by default.
     """
     new_questions = learning.run_all_checks()
     return json.dumps({
@@ -480,17 +624,22 @@ def list_atoms(
     type: str | None = None,
     status: str = "active",
     limit: int = 20,
+    memory_tier: str | None = None,
 ) -> str:
     """
     List atoms with optional filters. Useful for browsing the memory.
     """
-    atoms = db.list_atoms(domain=domain, type=type, status=status, limit=limit)
+    atoms = db.list_atoms(
+        domain=domain, type=type, status=status, limit=limit, memory_tier=memory_tier,
+    )
     # Slim down for listing
     slim = [{
         "id": a["id"],
         "title": a["title"],
         "domain": a["domain"],
         "type": a["type"],
+        "memory_tier": a.get("memory_tier", "semantic"),
+        "status": a.get("status", "active"),
         "confidence": a["confidence"],
         "weight": round(a["weight"], 3),
         "access_count": a["access_count"],
@@ -899,6 +1048,57 @@ def preference_search(
         "preferences": results,
     }, ensure_ascii=False, indent=2)
 
+
+
+# ─── Cognitive Curator Tools ────────────────────────────────
+
+@mcp.tool()
+def cognitive_status() -> str:
+    """
+    Get cognitive health metrics for the memory graph.
+
+    Returns counts for active/durable atoms, bonds, isolated durable atoms,
+    pending questions, missing compact summaries, stale atoms, and recommendations.
+    """
+    return json.dumps(curator.status(), ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
+def working_set(
+    query: str,
+    domain: str | None = None,
+    limit: int = 8,
+    graph_depth: int = 1,
+) -> str:
+    """
+    Build a task-oriented context pack before doing work.
+
+    Combines smart recall, graph neighbors, and key procedures/decisions into
+    a compact working set so the agent starts with the right operational memory.
+    """
+    result = curator.working_set(
+        query=query, domain=domain, limit=limit, graph_depth=graph_depth,
+    )
+    return json.dumps(result, ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
+def curator_run(
+    dry_run: bool = True,
+    auto_apply: bool = False,
+    max_atoms: int = 80,
+) -> str:
+    """
+    Run one cognitive curator pass.
+
+    dry_run=True only proposes actions. With auto_apply=True and dry_run=False,
+    applies safe body_compact generation and high-confidence rule-based bonds.
+    It never deletes durable atoms or rewrites markdown source files.
+    """
+    result = curator.run(
+        dry_run=dry_run, auto_apply=auto_apply, max_atoms=max_atoms,
+    )
+    return json.dumps(result, ensure_ascii=False, indent=2)
 
 # ─── Hierarchical Summary Tool ──────────────────────────────
 

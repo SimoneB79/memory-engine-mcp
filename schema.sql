@@ -11,13 +11,14 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS atoms (
     id            TEXT PRIMARY KEY,           -- UUID or slug
     type          TEXT NOT NULL DEFAULT 'fact', -- fact, decision, event, preference, log, procedure, note
+    memory_tier   TEXT NOT NULL DEFAULT 'semantic', -- episodic, semantic, procedural
     domain        TEXT NOT NULL DEFAULT 'general',
     title         TEXT NOT NULL,
     body          TEXT,
     body_compact  TEXT,                        -- auto-generated summary (L0)
     confidence    REAL NOT NULL DEFAULT 0.5 CHECK(confidence >= 0 AND confidence <= 1),
     weight        REAL NOT NULL DEFAULT 1.0 CHECK(weight >= 0 AND weight <= 2.0),
-    status        TEXT NOT NULL DEFAULT 'active', -- active, archived, merged, stale
+    status        TEXT NOT NULL DEFAULT 'active', -- active, archived, merged, stale, superseded
     source        TEXT DEFAULT 'ai',           -- markdown, ai, human, import
     source_path   TEXT,                        -- original file path if from markdown
     created_at    INTEGER NOT NULL DEFAULT (unixepoch()),
@@ -27,6 +28,22 @@ CREATE TABLE IF NOT EXISTS atoms (
     ttl           INTEGER,                     -- NULL = permanent, otherwise epoch expiry
     tags          TEXT DEFAULT '[]',           -- JSON array
     meta          TEXT DEFAULT '{}'            -- JSON object for extensions
+);
+
+-- ============================================================
+-- CONTRADICTIONS: explicit memory supersession history
+-- ============================================================
+CREATE TABLE IF NOT EXISTS memory_contradictions (
+    id                 TEXT PRIMARY KEY,
+    old_atom_id        TEXT NOT NULL,
+    new_atom_id        TEXT NOT NULL,
+    reason             TEXT,
+    resolution         TEXT NOT NULL DEFAULT 'superseded', -- superseded, contextual, unresolved
+    created_at         INTEGER NOT NULL DEFAULT (unixepoch()),
+    created_by         TEXT DEFAULT 'ai',
+    meta               TEXT DEFAULT '{}',
+    FOREIGN KEY (old_atom_id) REFERENCES atoms(id) ON DELETE CASCADE,
+    FOREIGN KEY (new_atom_id) REFERENCES atoms(id) ON DELETE CASCADE
 );
 
 -- ============================================================
@@ -105,7 +122,7 @@ CREATE TRIGGER IF NOT EXISTS atoms_fts_ad AFTER DELETE ON atoms BEGIN
     VALUES ('delete', old.rowid, old.title, COALESCE(old.body, ''), old.tags);
 END;
 
-CREATE TRIGGER IF NOT EXISTS atoms_fts_au AFTER UPDATE ON atoms BEGIN
+CREATE TRIGGER IF NOT EXISTS atoms_fts_au AFTER UPDATE OF title, body, tags ON atoms BEGIN
     INSERT INTO atoms_fts(atoms_fts, rowid, title, body, tags)
     VALUES ('delete', old.rowid, old.title, COALESCE(old.body, ''), old.tags);
     INSERT INTO atoms_fts(rowid, title, body, tags)
@@ -165,3 +182,5 @@ CREATE INDEX IF NOT EXISTS idx_errors_task ON error_memory(task_type);
 CREATE INDEX IF NOT EXISTS idx_errors_category ON error_memory(error_category);
 CREATE INDEX IF NOT EXISTS idx_errors_resolved ON error_memory(is_resolved);
 CREATE INDEX IF NOT EXISTS idx_errors_severity ON error_memory(severity);
+CREATE INDEX IF NOT EXISTS idx_contradictions_old ON memory_contradictions(old_atom_id);
+CREATE INDEX IF NOT EXISTS idx_contradictions_new ON memory_contradictions(new_atom_id);
