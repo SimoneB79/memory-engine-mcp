@@ -1,7 +1,7 @@
 <!-- mcp-name: io.github.simoneb79/memory-engine-mcp -->
 
 <p align="center">
-  <a href="#"><img alt="Version" src="https://img.shields.io/badge/version-1.5.2-blue" /></a>
+  <a href="#"><img alt="Version" src="https://img.shields.io/badge/version-1.6.0-blue" /></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green" /></a>
   <a href="#"><img alt="Python" src="https://img.shields.io/badge/python-3.12+-blue" /></a>
   <a href="server.json"><img alt="MCP Registry Ready" src="https://img.shields.io/badge/MCP%20Registry-ready-purple" /></a>
@@ -122,6 +122,36 @@ Memory engine — hybrid ranking, graph recall, decay, learning
 | `version` | Server version |
 | `recall_session` | Search one OpenClaw session |
 | `session_summary` | Summarize one OpenClaw session |
+| `memory_contradict` | Supersede an old atom with a newer contradictory one |
+| `list_contradictions` | List explicit contradiction/supersession records |
+| `classify_memory_tier` | Infer the 3-tier class (episodic/semantic/procedural) |
+| `memory_impact` | Impact analysis: what depends on this atom |
+
+## Web UI (optional)
+
+Memory Engine includes an optional web UI for graph exploration, atom
+inspection, contradiction browsing, and impact analysis.
+
+```bash
+# In docker-compose.yml, add:
+#   environment:
+#     - MEM_UI_PORT=6000
+#   expose:
+#     - "6000"
+```
+
+Or run standalone:
+
+```bash
+python3 web_ui.py
+# Open http://localhost:6000
+```
+
+<p align="center">
+  <img src="docs/graph-ui-screenshot.png" alt="Memory Engine Web UI — graph explorer" width="800" />
+  <br>
+  <em>Web UI: interactive graph, atom details, contradiction browser, stats dashboard</em>
+</p>
 
 ## Quick start with Docker
 
