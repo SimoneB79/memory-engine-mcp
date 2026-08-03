@@ -24,6 +24,9 @@ COPY curator.py .
 COPY learning.py .
 COPY importer.py .
 COPY session_watcher.py .
+COPY auth.py .
+COPY config_loader.py .
+COPY backup.py .
 COPY server.py .
 COPY web_ui.py .
 COPY config.json .

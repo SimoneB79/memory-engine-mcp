@@ -59,6 +59,13 @@
         "host": "0.0.0.0",
         "port": 8085
     },
+    "security": {
+        "api_token": null,
+        "allow_remote": false,
+        "rate_limit_per_minute": 120,
+        "max_body_chars": 100000,
+        "max_title_chars": 500
+    },
     "sessions_dir": "/sessions",
     "session_ttl_days": 7,
     "session_poll_interval": 30,

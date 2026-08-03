@@ -5,6 +5,106 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] — 2026-08-03
+
+### Test Suite, Auth/Hardening, Backup/Restore, Benchmark, SQLite Concurrency
+
+Major engineering hardening release. The model-audit identified key gaps;
+this version closes them with 135 tests, token auth, full backup/restore,
+recall benchmarking, and SQLite concurrency improvements.
+
+#### Testing (P1)
+
+- **Full test suite** — 135 tests across 9 files, all passing in ~14 s:
+  - `test_db.py` (42) — CRUD, bonds, graph traversal, merge, decay, error
+    memory, contradictions, FTS.
+  - `test_engine.py` (19) — ranking multivariate, recall with filters,
+    similarity, contradiction detection, weak atoms, merge candidates.
+  - `test_migrations.py` (8) — old schema → new, idempotency, FTS trigger
+    rebuild, data preservation.
+  - `test_auth.py` (13) — token verification, constant-time comparison,
+    Bearer extraction, bind address resolution.
+  - `test_server_security.py` (7) — input validation, null-byte guard,
+    rate limiter sliding window.
+  - `test_backup.py` (22) — snapshot, restore, verify, JSON export/import,
+    round-trip, list, cleanup.
+  - `test_benchmark.py` (11) — metric computation, query generation, report.
+  - `test_concurrency.py` (7) — PRAGMA verification, concurrent reads,
+    read-during-write, concurrent writes.
+
+- **Bugs found during testing**:
+  - `get_bonds(direction=...)` accepted `"out"`/`"in"` but docs implied
+    `"outgoing"`/`"incoming"` — clarified.
+  - `create_atom` with duplicate slug creates a variant ID (not an upsert).
+
+#### Auth & Hardening (P2)
+
+- **`auth.py`** — new module:
+  - API token via `MEMORY_API_TOKEN` env or `config.json → security.api_token`.
+  - Constant-time verification (`hmac.compare_digest`).
+  - Auth disabled by default (open mode for stdio/trusted environments).
+
+- **Secure bind** — `127.0.0.1` by default; `0.0.0.0` only if
+  `security.allow_remote: true`.
+
+- **Input validation** — title (500 chars), body (100 KB), null-byte guard
+  on all `remember()` calls.
+
+- **Rate limiting** — sliding-window limiter (120 req/min default) in
+  `server.py`.
+
+- **Web UI auth** — all `/api/*` endpoints require Bearer token (or
+  `?token=...` for browser) when auth is enabled.
+
+- **`config_loader.py`** — shared single-source-of-truth for config.
+
+- `config.json` gains a `security` section:
+  `api_token`, `allow_remote`, `rate_limit_per_minute`, `max_body_chars`,
+  `max_title_chars`.
+
+#### Backup / Restore / Export (P3)
+
+- **`backup.py`** — new module:
+  - `create_backup()` — SQLite online backup API + WAL checkpoint.
+  - `restore_backup()` — verify, safety backup, WAL flush, sidecar cleanup.
+  - `verify_backup()` — checks expected tables, FTS, row counts.
+  - `export_json()` / `import_json()` — portable JSON format, merge or
+    replace mode, FTS rebuild after import.
+  - `list_backups()` / `cleanup_old_backups()`.
+
+- **4 new MCP tools**:
+  - `backup_database(action=create|list|verify|cleanup)`
+  - `restore_database(backup_path)`
+  - `export_all(include_embeddings=False)`
+  - `import_data(json_data, mode=merge|replace)`
+
+#### Benchmark (P4)
+
+- **`benchmark.py`** — CLI recall quality suite:
+  - Auto-generates queries from existing atoms.
+  - Metrics: Precision@K, Recall, MRR, latency p50/p95.
+  - Graph expansion impact analysis (with vs without graph).
+  - JSON + Markdown report output.
+
+#### SQLite Concurrency (P5)
+
+- **New PRAGMAs** — `synchronous=NORMAL`, `temp_store=MEMORY`,
+  `mmap_size=256 MB` for better WAL performance.
+- **Retry on SQLITE_BUSY** — exponential backoff (3 retries, 100→200→400 ms).
+
+#### Docker
+
+- `.dockerignore` excludes `tests/`, `__pycache__/`, `benchmark.py` from
+  the production image.
+- Dockerfile copies new modules (`auth.py`, `config_loader.py`, `backup.py`).
+
+#### Backward Compatibility
+
+- No breaking changes. Auth is disabled by default — existing deployments
+  work unchanged. All new `security` config keys are optional.
+
+---
+
 ## [1.6.0] — 2026-07-29
 
 ### Contradiction Management & 3-Tier Memory

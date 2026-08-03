@@ -7,11 +7,11 @@
     "url": "https://github.com/SimoneB79/memory-engine-mcp",
     "source": "github"
   },
-  "version": "1.5.3",
+  "version": "1.7.0",
   "packages": [
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/simoneb79/memory-engine-mcp:1.5.3",
+      "identifier": "ghcr.io/simoneb79/memory-engine-mcp:1.7.0",
       "transport": {
         "type": "sse",
         "url": "http://localhost:8085/sse"
@@ -37,6 +37,13 @@
           "isRequired": false,
           "format": "number",
           "isSecret": false
+        },
+        {
+          "name": "MEMORY_API_TOKEN",
+          "description": "Optional API token for auth. If set, all requests require a Bearer token.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true
         }
       ]
     }

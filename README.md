@@ -1,7 +1,7 @@
 <!-- mcp-name: io.github.simoneb79/memory-engine-mcp -->
 
 <p align="center">
-  <a href="#"><img alt="Version" src="https://img.shields.io/badge/version-1.6.0-blue" /></a>
+  <a href="#"><img alt="Version" src="https://img.shields.io/badge/version-1.7.0-blue" /></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green" /></a>
   <a href="#"><img alt="Python" src="https://img.shields.io/badge/python-3.12+-blue" /></a>
   <a href="server.json"><img alt="MCP Registry Ready" src="https://img.shields.io/badge/MCP%20Registry-ready-purple" /></a>
@@ -41,13 +41,17 @@ The goal is not just storage. The goal is a memory system that can **recall, con
 ## Highlights
 
 - **Local-first** — SQLite database, optional local embeddings via Ollama, no required cloud API.
-- **MCP-native** — exposes 31 tools through FastMCP.
+- **MCP-native** — exposes 35 tools through FastMCP.
 - **Graph-aware recall** — expands top hits through bidirectional bonds for richer context.
 - **Semantic search** — meaning-based retrieval with `nomic-embed-text`.
 - **Markdown coexistence** — import existing notes one-way without replacing your human-readable memory.
 - **Error memory** — remembers mistakes and corrections, with auto-promotion to preferences after repeated failures.
 - **Cognitive curator** — non-destructive maintenance pass for compaction, bond suggestions, duplicate detection, and isolated atom classification.
 - **Session watcher** — optional OpenClaw JSONL ingestion with short-lived raw messages and permanent session digests.
+- **Backup & restore** — full SQLite snapshots, JSON export/import, verified restores with automatic safety backups.
+- **Auth & hardening** — optional API token, secure bind, input validation, rate limiting.
+- **Test suite** — 135 tests covering CRUD, ranking, migrations, auth, backup, concurrency.
+- **Benchmark** — CLI recall quality suite with Precision@K, MRR, latency percentiles.
 
 ## Architecture
 
@@ -55,7 +59,7 @@ The goal is not just storage. The goal is a memory system that can **recall, con
 AI assistant / MCP client
         │
         ▼
-FastMCP server — 31 tools
+FastMCP server — 35 tools
         │
         ▼
 Memory engine — hybrid ranking, graph recall, decay, learning
@@ -126,6 +130,15 @@ Memory engine — hybrid ranking, graph recall, decay, learning
 | `list_contradictions` | List explicit contradiction/supersession records |
 | `classify_memory_tier` | Infer the 3-tier class (episodic/semantic/procedural) |
 | `memory_impact` | Impact analysis: what depends on this atom |
+
+### Backup, restore & export
+
+| Tool | Purpose |
+|---|---|
+| `backup_database` | Create, list, verify, or clean up SQLite snapshots |
+| `restore_database` | Restore from a backup (with automatic safety backup) |
+| `export_all` | Export all memory data as portable JSON |
+| `import_data` | Import from JSON (merge or replace mode) |
 
 ## Web UI (optional)
 

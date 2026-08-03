@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 # ─── Version ────────────────────────────────────────────────
 
-__version__ = "1.6.0"
+__version__ = "1.7.0"
 
 from db import DB
 from engine import Engine
@@ -25,6 +25,7 @@ from session_watcher import SessionWatcher
 from embeddings import EmbeddingEngine
 from auto_bond import AutoBondEngine
 from curator import CognitiveCurator
+from auth import get_api_token, is_auth_enabled, get_bind_address
 
 # ─── Config ──────────────────────────────────────────────────
 
@@ -33,8 +34,18 @@ config = json.loads(CONFIG_PATH.read_text())
 
 DB_PATH = os.environ.get("MEMORY_DB_PATH", config.get("db_path", "/data/memory.db"))
 MD_SOURCE = os.environ.get("MARKDOWN_SOURCE", config.get("markdown_source", "/workspace/memory"))
+# Security: default to localhost-only unless explicitly allowed
+_sec_cfg = config.get("security", {})
 HOST = os.environ.get("MEMORY_HOST", config.get("server", {}).get("host", "0.0.0.0"))
 PORT = int(os.environ.get("MEMORY_PORT", config.get("server", {}).get("port", 8087)))
+# Override bind address based on security config
+if not os.environ.get("MEMORY_HOST"):
+    HOST = get_bind_address(config)
+
+# Input limits
+MAX_TITLE_CHARS = int(_sec_cfg.get("max_title_chars", 500))
+MAX_BODY_CHARS = int(_sec_cfg.get("max_body_chars", 100000))
+RATE_LIMIT_PER_MIN = int(_sec_cfg.get("rate_limit_per_minute", 120))
 
 # Session watcher config
 SESSIONS_DIR = os.environ.get(
@@ -197,6 +208,37 @@ def _reindex_loop():
 _reindex_thread = threading.Thread(target=_reindex_loop, daemon=True)
 _reindex_thread.start()
 
+# ─── Input validation ─────────────────────────────
+
+_rate_bucket = {"count": 0, "window": int(time.time())}
+_rate_lock = threading.Lock()
+
+
+def _check_rate_limit() -> bool:
+    """Simple in-process rate limiter (sliding window)."""
+    with _rate_lock:
+        now = int(time.time())
+        if now - _rate_bucket["window"] >= 60:
+            _rate_bucket["count"] = 0
+            _rate_bucket["window"] = now
+        _rate_bucket["count"] += 1
+        return _rate_bucket["count"] <= RATE_LIMIT_PER_MIN
+
+
+def _validate_input(title: str, body: str = "") -> str | None:
+    """Validate atom input. Returns error message or None if valid."""
+    if not title or not title.strip():
+        return "Title is required and cannot be empty"
+    if len(title) > MAX_TITLE_CHARS:
+        return f"Title exceeds max length ({MAX_TITLE_CHARS} chars)"
+    if len(body) > MAX_BODY_CHARS:
+        return f"Body exceeds max length ({MAX_BODY_CHARS} chars)"
+    # Basic null-byte injection guard
+    if "\x00" in title or "\x00" in body:
+        return "Null bytes are not allowed"
+    return None
+
+
 # ─── MCP Server ──────────────────────────────────────────────
 
 mcp = FastMCP(
@@ -233,6 +275,12 @@ def remember(
     Returns:
         JSON string with created atom info
     """
+    # Input validation
+    err = _validate_input(title, body)
+    if err:
+        return json.dumps({"error": err})
+    if not _check_rate_limit():
+        return json.dumps({"error": "Rate limit exceeded. Try again later."})
     ttl = int(time.time()) + (ttl_days * 86400) if ttl_days else None
     atom = db.create_atom(
         title=title,
@@ -1121,6 +1169,122 @@ def memory_summary(domain: str | None = None) -> str:
     return json.dumps(result, ensure_ascii=False, indent=2)
 
 
+from backup import (
+    create_backup as _do_backup,
+    restore_backup as _do_restore,
+    verify_backup as _verify_backup,
+    export_json as _export_json,
+    import_json as _import_json,
+    list_backups as _list_backups,
+    cleanup_old_backups as _cleanup_backups,
+)
+
+
+@mcp.tool()
+def backup_database(action: str = "create", backup_path: str | None = None,
+                    keep: int = 10) -> str:
+    """
+    Create, list, verify, or clean up database backups.
+    
+    Args:
+        action: One of: create, list, verify, cleanup
+        backup_path: Path to backup (for verify). If None, uses default location.
+        keep: Number of backups to keep for cleanup (default 10)
+    
+    Returns:
+        JSON string with backup information
+    """
+    try:
+        if action == "create":
+            result = _do_backup(DB_PATH)
+            return json.dumps(result, ensure_ascii=False, indent=2)
+        elif action == "list":
+            result = _list_backups(DB_PATH)
+            return json.dumps(result, ensure_ascii=False, indent=2)
+        elif action == "verify":
+            if not backup_path:
+                return json.dumps({"error": "backup_path required for verify"})
+            result = _verify_backup(backup_path)
+            return json.dumps(result, ensure_ascii=False, indent=2)
+        elif action == "cleanup":
+            result = _cleanup_backups(DB_PATH, keep=keep)
+            return json.dumps(result, ensure_ascii=False, indent=2)
+        else:
+            return json.dumps({"error": f"Unknown action: {action}. Use: create, list, verify, cleanup"})
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def restore_database(backup_path: str) -> str:
+    """
+    Restore database from a backup file.
+    
+    WARNING: This overwrites the current database.
+    A safety backup of the current state is created automatically before restore.
+    
+    Args:
+        backup_path: Path to the backup file to restore from
+    
+    Returns:
+        JSON string with restore result
+    """
+    try:
+        result = _do_restore(DB_PATH, backup_path, verify=True)
+        return json.dumps(result, ensure_ascii=False, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def export_all(include_embeddings: bool = False) -> str:
+    """
+    Export all memory data as JSON.
+    Portable format for migration, versioning, or external analysis.
+    
+    Args:
+        include_embeddings: Include embedding vectors (default False — they are large)
+    
+    Returns:
+        JSON string with all memory data
+    """
+    try:
+        data = _export_json(DB_PATH, include_embeddings=include_embeddings)
+        return json.dumps(data, ensure_ascii=False, indent=2, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def import_data(json_data: str, mode: str = "merge") -> str:
+    """
+    Import memory data from a JSON export.
+    
+    Args:
+        json_data: JSON string from export_all, or path to a .json file
+        mode: "merge" (upsert by ID) or "replace" (wipe + insert)
+    
+    Returns:
+        JSON string with import statistics
+    """
+    import tempfile
+    try:
+        # Accept both raw JSON and file path
+        if json_data.strip().startswith("{"):
+            # Raw JSON — write to temp file for import_json
+            fd, tmp = tempfile.mkstemp(suffix=".json")
+            os.write(fd, json_data.encode())
+            os.close(fd)
+            result = _import_json(DB_PATH, tmp, mode=mode)
+            os.unlink(tmp)
+        else:
+            # Treat as file path
+            result = _import_json(DB_PATH, json_data.strip(), mode=mode)
+        return json.dumps(result, ensure_ascii=False, indent=2)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
 # ─── Main ────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -1129,6 +1293,13 @@ if __name__ == "__main__":
     print(f"   Markdown source: {MD_SOURCE}")
     print(f"   Sessions dir: {SESSIONS_DIR} (TTL={SESSION_TTL_DAYS}d)")
     print(f"   Embeddings: {'✅ ' + embeddings.model if embeddings.enabled else '❌ disabled'}")
+    # Security info
+    if is_auth_enabled():
+        print(f"   🔒 Auth: ENABLED (token-based)")
+    else:
+        print(f"   ⚠️  Auth: DISABLED (open mode — not for network exposure)")
+    print(f"   Bind: {HOST} ({'remote OK' if HOST == '0.0.0.0' else 'localhost only'})")
+    print(f"   Rate limit: {RATE_LIMIT_PER_MIN}/min")
     try:
         mcp.run(transport="sse")
     finally:

@@ -7,14 +7,23 @@ Does NOT interfere with the MCP SSE transport on 8085.
 
 import json
 import os
+import sys
 import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
+# Add project dir to path for imports
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 from db import DB
+from auth import check_token, extract_bearer, is_auth_enabled, get_bind_address
+from config_loader import load_config
 
 DB_PATH = os.environ.get("MEMORY_DB_PATH", "/data/memory.db")
-UI_PORT = int(os.environ.get("MEM_UI_PORT", "6000"))
+_cfg = load_config()
+UI_PORT = int(os.environ.get("MEM_UI_PORT", str(_cfg.get("server", {}).get("ui_port", 6000))))
+_bind_cfg = _cfg.get("security", {})
+UI_HOST = "0.0.0.0" if _bind_cfg.get("allow_remote", False) else "127.0.0.1"
 
 _db: DB | None = None
 
@@ -294,6 +303,18 @@ class UIHandler(BaseHTTPRequestHandler):
         path = parsed.path.rstrip("/") or "/"
         qs = parse_qs(parsed.query)
 
+        # Auth check — skip for the HTML page itself (it's just a static client)
+        # but require token on all /api/ endpoints
+        if path.startswith("/api/"):
+            if is_auth_enabled():
+                auth_header = self.headers.get("Authorization")
+                token = extract_bearer(auth_header)
+                # Also allow token via query param for browser convenience
+                if not token:
+                    token = qs.get("token", [None])[0]
+                if not check_token(token):
+                    return self._json({"error": "Unauthorized"}, 401)
+
         if path == "/" or path == "/ui":
             return self._html(HTML_PAGE)
 
@@ -420,8 +441,9 @@ class UIHandler(BaseHTTPRequestHandler):
 
 
 def main():
-    print(f"🖥️  Memory Engine UI starting on port {UI_PORT}")
-    server = HTTPServer(("0.0.0.0", UI_PORT), UIHandler)
+    auth_status = "ENABLED" if is_auth_enabled() else "DISABLED"
+    print(f"🖥️  Memory Engine UI starting on {UI_HOST}:{UI_PORT} (auth: {auth_status})")
+    server = HTTPServer((UI_HOST, UI_PORT), UIHandler)
     server.serve_forever()
 
 

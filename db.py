@@ -7,12 +7,17 @@ import json
 import uuid
 import time
 import re
+import threading
 from pathlib import Path
 from typing import Optional
 from contextlib import contextmanager
 
 
 SCHEMA_PATH = Path(__file__).parent / "schema.sql"
+
+# Retry config for SQLITE_BUSY
+_BUSY_RETRIES = 3
+_BUSY_BASE_DELAY = 0.1  # 100ms base, exponential backoff
 
 
 class DB:
@@ -22,11 +27,32 @@ class DB:
 
     @contextmanager
     def conn(self):
-        c = sqlite3.connect(self.db_path, timeout=10)
-        c.row_factory = sqlite3.Row
-        c.execute("PRAGMA foreign_keys = ON")
-        c.execute("PRAGMA journal_mode = WAL")
-        c.execute("PRAGMA busy_timeout = 5000")
+        """
+        Connection with WAL mode, busy timeout, and retry on SQLITE_BUSY.
+        Each call creates a fresh connection (thread-safe for SQLite).
+        """
+        c = None
+        last_err = None
+        for attempt in range(_BUSY_RETRIES + 1):
+            try:
+                c = sqlite3.connect(self.db_path, timeout=10)
+                c.row_factory = sqlite3.Row
+                c.execute("PRAGMA foreign_keys = ON")
+                c.execute("PRAGMA journal_mode = WAL")
+                c.execute("PRAGMA synchronous = NORMAL")
+                c.execute("PRAGMA busy_timeout = 5000")
+                c.execute("PRAGMA temp_store = MEMORY")
+                c.execute("PRAGMA mmap_size = 268435456")  # 256MB mmap
+                break
+            except sqlite3.OperationalError as e:
+                last_err = e
+                if "locked" in str(e) or "busy" in str(e):
+                    delay = _BUSY_BASE_DELAY * (2 ** attempt)
+                    time.sleep(delay)
+                    continue
+                raise
+        if c is None:
+            raise last_err
         try:
             yield c
             c.commit()
