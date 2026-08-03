@@ -1,8 +1,8 @@
-version: "3.8"
-
 services:
   memory-engine:
-    build: .
+    image: ghcr.io/simoneb79/memory-engine-mcp:1.7.0
+    # For local development, replace with:
+    # build: .
     container_name: memory-engine
     restart: unless-stopped
     ports:
@@ -12,19 +12,17 @@ services:
       # Persistent SQLite storage
       - memory-data:/data
       # Read-only access to workspace memory (markdown import)
-      - /home/sb/openclaw/workspace/memory:/workspace/memory:ro
+      # Update this path to match your workspace
+      - ./memory:/workspace/memory:ro
     environment:
       - MEMORY_DB_PATH=/data/memory.db
       - MARKDOWN_SOURCE=/workspace/memory
-      - MEMORY_HOST=0.0.0.0
       - MEMORY_PORT=8085
       - MEM_UI_PORT=8091
+      # Optional: enable auth
+      # - MEMORY_API_TOKEN=your-secret-token
     networks:
-      - proxy
+      - default
 
 volumes:
   memory-data:
-
-networks:
-  proxy:
-    external: true

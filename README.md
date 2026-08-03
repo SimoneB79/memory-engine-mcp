@@ -168,6 +168,32 @@ python3 web_ui.py
 
 ## Quick start with Docker
 
+### Option A — Use the pre-built image (recommended)
+
+```yaml
+# docker-compose.yml
+services:
+  memory-engine:
+    image: ghcr.io/simoneb79/memory-engine-mcp:1.7.0
+    ports:
+      - "8085:8085"
+    volumes:
+      - memory-data:/data
+    restart: unless-stopped
+
+volumes:
+  memory-data:
+```
+
+```bash
+docker compose up -d
+```
+
+> **Pin the version.** Use an explicit tag like `:1.7.0` in production.
+> Avoid `:latest` — it can change without notice.
+
+### Option B — Build from source
+
 ```bash
 git clone https://github.com/SimoneB79/memory-engine-mcp.git
 cd memory-engine-mcp
@@ -216,8 +242,9 @@ Important environment variables:
 |---|---:|---|
 | `MEMORY_DB_PATH` | `/data/memory.db` | SQLite database path |
 | `MARKDOWN_SOURCE` | `/workspace/memory` | Markdown directory for import |
-| `MEMORY_HOST` | `0.0.0.0` | Server bind address |
+| `MEMORY_HOST` | `127.0.0.1` | Server bind address (secure default) |
 | `MEMORY_PORT` | `8085` | SSE port |
+| `MEMORY_API_TOKEN` | _(none)_ | Optional API token for auth (see Security) |
 | `OPENCLAW_SESSIONS_DIR` | `/sessions` | Optional OpenClaw sessions directory |
 | `SESSION_DIGEST_DIR` | `/data/session_digests` | Optional session digest output |
 
@@ -279,6 +306,37 @@ working_set(
     graph_depth=1
 )
 ```
+
+## Security
+
+By default, Memory Engine runs in **open mode** (no auth) — safe for stdio
+or trusted local environments.
+
+To enable API token auth:
+
+```json
+// config.json
+{
+  "security": {
+    "api_token": "your-secret-token",
+    "allow_remote": false
+  }
+}
+```
+
+Or via environment variable:
+
+```bash
+MEMORY_API_TOKEN=your-secret-token
+```
+
+When auth is enabled:
+- MCP SSE requests must include `Authorization: Bearer <token>`
+- Web UI API endpoints require `?token=<token>` or Bearer header
+- Server binds to `127.0.0.1` unless `allow_remote: true`
+- Input validation (title/body size limits) and rate limiting are always active
+
+See [`CHANGELOG.md`](CHANGELOG.md) for the full list of security features.
 
 ## Publishing and registries
 
