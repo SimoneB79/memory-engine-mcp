@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 # ─── Version ────────────────────────────────────────────────
 
-__version__ = "1.7.0"
+__version__ = "1.8.0"
 
 from db import DB
 from engine import Engine
@@ -51,6 +51,10 @@ RATE_LIMIT_PER_MIN = int(_sec_cfg.get("rate_limit_per_minute", 120))
 SESSIONS_DIR = os.environ.get(
     "OPENCLAW_SESSIONS_DIR",
     config.get("sessions_dir", "/home/node/.openclaw/agents/main/sessions"),
+)
+OPENCLAW_AGENT_DB = os.environ.get(
+    "OPENCLAW_AGENT_DB",
+    config.get("openclaw_agent_db", ""),
 )
 SESSION_TTL_DAYS = int(os.environ.get(
     "SESSION_TTL_DAYS",
@@ -101,6 +105,7 @@ session_watcher = SessionWatcher(
     exclude_patterns=SESSION_EXCLUDE_PATTERNS,
     max_content_chars=SESSION_MAX_CONTENT,
     inactive_threshold_minutes=SESSION_INACTIVE_THRESHOLD,
+    agent_db_path=OPENCLAW_AGENT_DB or None,
 )
 session_watcher.start()
 
@@ -1291,7 +1296,8 @@ if __name__ == "__main__":
     print(f"🧠 Memory Engine v{__version__} starting on {HOST}:{PORT}")
     print(f"   DB: {DB_PATH}")
     print(f"   Markdown source: {MD_SOURCE}")
-    print(f"   Sessions dir: {SESSIONS_DIR} (TTL={SESSION_TTL_DAYS}d)")
+    transcript_source = OPENCLAW_AGENT_DB or f"{SESSIONS_DIR} (legacy JSONL)"
+    print(f"   Transcript source: {transcript_source} (TTL={SESSION_TTL_DAYS}d)")
     print(f"   Embeddings: {'✅ ' + embeddings.model if embeddings.enabled else '❌ disabled'}")
     # Security info
     if is_auth_enabled():

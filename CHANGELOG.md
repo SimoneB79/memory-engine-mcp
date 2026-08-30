@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] — 2026-08-30
+
+### OpenClaw SQLite transcript ingestion
+
+- Added canonical transcript ingestion for OpenClaw 2026.9.1-beta.1 agent
+  databases (schema 17), using read-only SQLite connections with busy retry.
+- Active projections are read through `session_transcript_active_events`;
+  stable identities come from `transcript_event_identities`.
+- Reset events create separate logical digest segments.
+- Tool calls/results, thinking, heartbeats, cron sessions, and delivery mirrors
+  are excluded before ingestion.
+- Added deleted-session archive support for `identity` and `zstd` payloads.
+- Added projection cursors and stable event deduplication; canonical rewrites
+  update/archive affected atoms.
+- Permanent session digests are now deterministic and regenerated when a
+  canonical projection changes.
+- JSONL session ingestion remains available as a legacy fallback.
+- Added deployment documentation for mounting the full agent directory
+  read-only so SQLite can access DB, WAL, and SHM.
+- Test suite expanded to 144 passing tests.
+
 ## [1.7.0] — 2026-08-03
 
 ### Test Suite, Auth/Hardening, Backup/Restore, Benchmark, SQLite Concurrency

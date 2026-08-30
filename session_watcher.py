@@ -1,6 +1,6 @@
 """
-Memory Engine — Session Watcher v2
-Monitors OpenClaw session JSONL files and ingests messages as atoms.
+Memory Engine — Session Watcher v3
+Ingests canonical OpenClaw SQLite transcripts with JSONL legacy fallback.
 
 Fixes over v1:
 - Persistent offsets in SQLite (survives container restart)
@@ -21,6 +21,8 @@ import logging
 from pathlib import Path
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+
+from openclaw_sqlite import OpenClawSQLiteSource
 
 logger = logging.getLogger("session_watcher")
 
@@ -45,9 +47,11 @@ class SessionWatcher:
         exclude_patterns: list[str] | None = None,
         max_content_chars: int = 2000,
         inactive_threshold_minutes: int = 30,
+        agent_db_path: str | None = None,
     ):
         self.db = db
         self.sessions_dir = Path(sessions_dir)
+        self.agent_db_path = Path(agent_db_path) if agent_db_path else None
         self.ttl_days = ttl_days
         self.poll_interval = poll_interval
         self.digest_dir = Path(digest_dir) if digest_dir else None
@@ -57,8 +61,17 @@ class SessionWatcher:
         self._observer: Observer | None = None
         self._poll_thread: threading.Thread | None = None
         self._running = False
-        # Track last activity per session (session_id -> epoch seconds)
+        # Track last activity per legacy JSONL session.
         self._last_activity: dict[str, float] = {}
+        self._sqlite_source = (
+            OpenClawSQLiteSource(
+                str(self.agent_db_path),
+                exclude_patterns=self.exclude_patterns,
+                max_content_chars=self.max_content_chars,
+            )
+            if self.agent_db_path
+            else None
+        )
 
     # ─── LIFECYCLE ───────────────────────────────────────────
 
@@ -72,18 +85,20 @@ class SessionWatcher:
         if self.digest_dir:
             self.digest_dir.mkdir(parents=True, exist_ok=True)
 
-        # Initial scan of existing files
-        self._initial_scan()
-
-        # Watchdog observer for real-time events
-        self._observer = Observer()
-        self._observer.schedule(
-            _SessionEventHandler(self),
-            str(self.sessions_dir),
-            recursive=False,
-        )
-        self._observer.daemon = True
-        self._observer.start()
+        # SQLite is authoritative when configured; JSONL remains a fallback.
+        if self._sqlite_source:
+            self._scan_sqlite()
+        else:
+            self._initial_scan()
+            if self.sessions_dir.exists():
+                self._observer = Observer()
+                self._observer.schedule(
+                    _SessionEventHandler(self),
+                    str(self.sessions_dir),
+                    recursive=False,
+                )
+                self._observer.daemon = True
+                self._observer.start()
 
         # Polling fallback (catches missed inotify events on overlayfs)
         if self.poll_interval > 0:
@@ -91,8 +106,8 @@ class SessionWatcher:
             self._poll_thread.start()
 
         logger.info(
-            "SessionWatcher v2.1 started on %s (TTL=%dd, poll=%ds, inactive=%dm, digest=%s, exclude=%s)",
-            self.sessions_dir, self.ttl_days, self.poll_interval,
+            "SessionWatcher v3 started (source=%s, TTL=%dd, poll=%ds, inactive=%dm, digest=%s, exclude=%s)",
+            self.agent_db_path or self.sessions_dir, self.ttl_days, self.poll_interval,
             self.inactive_threshold // 60, self.digest_dir, self.exclude_patterns,
         )
 
@@ -306,6 +321,228 @@ class SessionWatcher:
         except Exception as e:
             logger.error("Failed to create session atom: %s", e)
 
+    # ─── OPENCLAW SQLITE PROCESSING ──────────────────────────
+
+    def _get_cursor_hash(self, source_key: str) -> str | None:
+        with self.db.conn() as c:
+            row = c.execute(
+                "SELECT projection_hash FROM session_cursors WHERE source_key = ?",
+                (source_key,),
+            ).fetchone()
+        return row["projection_hash"] if row else None
+
+    def _set_cursor(self, batch):
+        with self.db.conn() as c:
+            c.execute(
+                """INSERT INTO session_cursors
+                       (source_key, session_id, generation, segment, last_seq,
+                        projection_hash, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(source_key) DO UPDATE SET
+                       last_seq = excluded.last_seq,
+                       projection_hash = excluded.projection_hash,
+                       updated_at = excluded.updated_at""",
+                (
+                    batch.source_key,
+                    batch.session_id,
+                    batch.generation,
+                    batch.segment,
+                    batch.last_seq,
+                    batch.projection_hash,
+                    int(time.time()),
+                ),
+            )
+
+    def _scan_sqlite(self):
+        batches = self._sqlite_source.scan()
+        current_keys = {batch.source_key for batch in batches}
+        for batch in batches:
+            if self._get_cursor_hash(batch.source_key) == batch.projection_hash:
+                continue
+            self._sync_sqlite_batch(batch)
+        self._archive_missing_sqlite_batches(current_keys)
+
+    def _archive_missing_sqlite_batches(self, current_keys: set[str]):
+        with self.db.conn() as c:
+            known_keys = {
+                row["source_key"]
+                for row in c.execute("SELECT source_key FROM session_cursors")
+            }
+        for source_key in known_keys - current_keys:
+            logical_id = "oc_" + hashlib.sha256(source_key.encode()).hexdigest()[:24]
+            domain = f"session/{logical_id}"
+            with self.db.conn() as c:
+                rows = c.execute(
+                    """SELECT id FROM atoms WHERE domain = ? AND status = 'active'
+                       AND type IN ('session_msg', 'session_digest')
+                       AND source = 'session_watcher'""",
+                    (domain,),
+                ).fetchall()
+            for row in rows:
+                self.db.update_atom(
+                    row["id"],
+                    status="archived",
+                    changed_by="session_watcher",
+                    change_reason="OpenClaw canonical segment no longer active",
+                )
+            with self.db.conn() as c:
+                c.execute(
+                    "DELETE FROM session_cursors WHERE source_key = ?",
+                    (source_key,),
+                )
+
+    def _sync_sqlite_batch(self, batch):
+        domain = f"session/{batch.logical_id}"
+        incoming_ids = {msg["event_id"] for msg in batch.messages}
+        with self.db.conn() as c:
+            existing_rows = c.execute(
+                """SELECT id, title, body, status, content_hash, meta
+                   FROM atoms WHERE type = 'session_msg' AND domain = ?
+                   AND source = 'session_watcher'""",
+                (domain,),
+            ).fetchall()
+
+        existing_by_hash = {row["content_hash"]: row for row in existing_rows}
+        for msg in batch.messages:
+            content_hash = hashlib.sha256(
+                f"openclaw:{batch.agent_id}:{batch.session_id}:{msg['event_id']}".encode()
+            ).hexdigest()
+            title_text = msg["content"][:80].replace("\n", " ")
+            if len(msg["content"]) > 80:
+                title_text += "..."
+            title = f"[{msg['role']}] {title_text}"
+            body = json.dumps(
+                {
+                    "session_id": batch.session_id,
+                    "logical_session_id": batch.logical_id,
+                    "generation": batch.generation,
+                    "segment": batch.segment,
+                    "event_id": msg["event_id"],
+                    "seq": msg["seq"],
+                    "role": msg["role"],
+                    "content": msg["content"],
+                    "timestamp": msg["timestamp"],
+                },
+                ensure_ascii=False,
+            )
+            meta = {
+                "agent_id": batch.agent_id,
+                "source_key": batch.source_key,
+                "event_id": msg["event_id"],
+            }
+            current = existing_by_hash.get(content_hash)
+            if current:
+                if (
+                    current["title"] != title
+                    or current["body"] != body
+                    or current["status"] != "active"
+                ):
+                    self.db.update_atom(
+                        current["id"],
+                        title=title,
+                        body=body,
+                        status="active",
+                        meta=meta,
+                        changed_by="session_watcher",
+                        change_reason="OpenClaw canonical projection changed",
+                    )
+                continue
+
+            atom_id = "sess_" + content_hash[:24]
+            self.db.create_atom(
+                atom_id=atom_id,
+                title=title,
+                body=body,
+                type="session_msg",
+                domain=domain,
+                confidence=0.6,
+                tags=[msg["role"], "session", "openclaw-sqlite"],
+                source="session_watcher",
+                ttl=int(time.time()) + (self.ttl_days * 86400),
+                content_hash=content_hash,
+                meta=meta,
+            )
+
+        for row in existing_rows:
+            try:
+                event_id = json.loads(row["meta"] or "{}").get("event_id")
+            except (json.JSONDecodeError, TypeError):
+                event_id = None
+            if event_id and event_id not in incoming_ids and row["status"] == "active":
+                self.db.update_atom(
+                    row["id"],
+                    status="archived",
+                    changed_by="session_watcher",
+                    change_reason="Removed from OpenClaw canonical projection",
+                )
+
+        self._write_sqlite_digest(batch)
+        self._upsert_sqlite_digest(batch, domain)
+        self._set_cursor(batch)
+
+    def _write_sqlite_digest(self, batch):
+        if not self.digest_dir:
+            return
+        lines = [f"# Session Digest — {batch.logical_id}"]
+        for msg in batch.messages:
+            lines.append(
+                f"\n---\n\n**[{msg['role']}]** _{msg.get('timestamp') or ''}_"
+                f"\n\n{msg['content']}\n"
+            )
+        target = self.digest_dir / f"{batch.logical_id}.md"
+        target.write_text("\n".join(lines), encoding="utf-8")
+
+    def _upsert_sqlite_digest(self, batch, domain: str):
+        user_messages = [m for m in batch.messages if m["role"] == "user"]
+        if not user_messages:
+            return
+        selected = user_messages
+        if len(selected) > 30:
+            selected = selected[:15] + selected[-15:]
+        user_lines = []
+        for msg in selected:
+            content = msg["content"]
+            user_lines.append("- " + (content[:200] + "..." if len(content) > 200 else content))
+        first_ts = user_messages[0].get("timestamp") or ""
+        last_ts = user_messages[-1].get("timestamp") or ""
+        body = (
+            f"Session: {batch.logical_id}\n"
+            f"OpenClaw session: {batch.session_id}\n"
+            f"Generation: {batch.generation}; segment: {batch.segment}\n"
+            f"Period: {first_ts} → {last_ts}\n"
+            f"Messages: {len(batch.messages)}\n\nUser messages:\n"
+            + "\n".join(user_lines)
+        )
+        title = "Digest: " + user_lines[0][2:62]
+        atom_id = "digest_" + hashlib.sha256(batch.source_key.encode()).hexdigest()[:24]
+        with self.db.conn() as c:
+            current = c.execute(
+                "SELECT title, body, status FROM atoms WHERE id = ?", (atom_id,)
+            ).fetchone()
+        if current:
+            if current["title"] != title or current["body"] != body or current["status"] != "active":
+                self.db.update_atom(
+                    atom_id,
+                    title=title,
+                    body=body,
+                    status="active",
+                    changed_by="session_watcher",
+                    change_reason="OpenClaw digest regenerated",
+                )
+            return
+        self.db.create_atom(
+            atom_id=atom_id,
+            title=title,
+            body=body,
+            type="session_digest",
+            domain=domain,
+            confidence=0.7,
+            tags=["session_digest", "openclaw-sqlite"],
+            source="session_watcher",
+            ttl=None,
+            content_hash=None,
+        )
+
     # ─── MARKDOWN DIGEST ─────────────────────────────────────
 
     def _update_digest(self, session_id: str, new_messages: list[dict]):
@@ -444,7 +681,10 @@ class SessionWatcher:
                 logger.error("Polling scan error: %s", e)
 
     def _scan_all(self):
-        """Check all session files for new content."""
+        """Scan the authoritative SQLite source or the legacy JSONL fallback."""
+        if self._sqlite_source:
+            self._scan_sqlite()
+            return
         if not self.sessions_dir.exists():
             return
         for f in self.sessions_dir.glob("*.jsonl"):

@@ -55,6 +55,17 @@ CREATE TABLE IF NOT EXISTS session_offsets (
     updated_at    INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
+-- Canonical projection cursors for OpenClaw per-agent SQLite transcripts.
+CREATE TABLE IF NOT EXISTS session_cursors (
+    source_key       TEXT PRIMARY KEY,
+    session_id       TEXT NOT NULL,
+    generation       TEXT NOT NULL,
+    segment          INTEGER NOT NULL DEFAULT 0,
+    last_seq         INTEGER NOT NULL DEFAULT 0,
+    projection_hash  TEXT NOT NULL,
+    updated_at       INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
 -- ============================================================
 -- BONDS: typed relationships between atoms (knowledge graph)
 -- ============================================================

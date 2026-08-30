@@ -1,6 +1,6 @@
 services:
   memory-engine:
-    image: ghcr.io/simoneb79/memory-engine-mcp:1.7.0
+    image: ghcr.io/simoneb79/memory-engine-mcp:1.8.0
     # For local development, replace with:
     # build: .
     container_name: memory-engine
@@ -12,13 +12,16 @@ services:
       # Persistent SQLite storage
       - memory-data:/data
       # Read-only access to workspace memory (markdown import)
-      # Update this path to match your workspace
+      # Update these paths to match your installation
       - ./memory:/workspace/memory:ro
+      # Entire agent directory: SQLite DB plus live WAL/SHM sidecars
+      - ./openclaw-agent:/openclaw-agent:ro
     environment:
       - MEMORY_DB_PATH=/data/memory.db
       - MARKDOWN_SOURCE=/workspace/memory
       - MEMORY_PORT=8085
       - MEM_UI_PORT=8091
+      - OPENCLAW_AGENT_DB=/openclaw-agent/openclaw-agent.sqlite
       # Optional: enable auth
       # - MEMORY_API_TOKEN=your-secret-token
     networks:

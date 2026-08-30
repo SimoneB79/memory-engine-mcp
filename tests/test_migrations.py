@@ -167,7 +167,7 @@ class TestMigrations:
             ).fetchall()]
         for expected in ["atoms", "bonds", "atom_versions", "human_questions",
                          "memory_contradictions", "error_memory", "atom_embeddings",
-                         "session_offsets"]:
+                         "session_offsets", "session_cursors"]:
             assert expected in tables, f"Missing table: {expected}"
 
     def test_fresh_db_has_fts(self, tmp_path):

@@ -47,10 +47,10 @@ The goal is not just storage. The goal is a memory system that can **recall, con
 - **Markdown coexistence** — import existing notes one-way without replacing your human-readable memory.
 - **Error memory** — remembers mistakes and corrections, with auto-promotion to preferences after repeated failures.
 - **Cognitive curator** — non-destructive maintenance pass for compaction, bond suggestions, duplicate detection, and isolated atom classification.
-- **Session watcher** — optional OpenClaw JSONL ingestion with short-lived raw messages and permanent session digests.
+- **Session watcher** — canonical OpenClaw SQLite ingestion (schema 17), reset-aware digests, and JSONL legacy fallback.
 - **Backup & restore** — full SQLite snapshots, JSON export/import, verified restores with automatic safety backups.
 - **Auth & hardening** — optional API token, secure bind, input validation, rate limiting.
-- **Test suite** — 135 tests covering CRUD, ranking, migrations, auth, backup, concurrency.
+- **Test suite** — 144 tests covering CRUD, ranking, migrations, auth, backup, concurrency, and transcript ingestion.
 - **Benchmark** — CLI recall quality suite with Precision@K, MRR, latency percentiles.
 
 ## Architecture
@@ -67,7 +67,7 @@ Memory engine — hybrid ranking, graph recall, decay, learning
         ├── SQLite — atoms, bonds, FTS5, JSON metadata, versions
         ├── Ollama — optional local embeddings
         ├── Curator — conservative maintenance
-        └── Session watcher — optional OpenClaw session ingestion
+        └── Session watcher — OpenClaw SQLite + JSONL fallback
 ```
 
 ## MCP Tools
@@ -245,8 +245,12 @@ Important environment variables:
 | `MEMORY_HOST` | `127.0.0.1` | Server bind address (secure default) |
 | `MEMORY_PORT` | `8085` | SSE port |
 | `MEMORY_API_TOKEN` | _(none)_ | Optional API token for auth (see Security) |
-| `OPENCLAW_SESSIONS_DIR` | `/sessions` | Optional OpenClaw sessions directory |
+| `OPENCLAW_AGENT_DB` | _(none)_ | Preferred per-agent OpenClaw SQLite DB (schema 17) |
+| `OPENCLAW_SESSIONS_DIR` | `/sessions` | Legacy JSONL fallback when no agent DB is configured |
 | `SESSION_DIGEST_DIR` | `/data/session_digests` | Optional session digest output |
+
+For the SQLite mount, WAL/SHM handling, filtering, and security boundary, see
+[OpenClaw transcript ingestion](OPENCLAW_TRANSCRIPTS.md).
 
 Semantic search requires Ollama reachable from the container or host. Default:
 

@@ -24,6 +24,8 @@ COPY curator.py .
 COPY learning.py .
 COPY importer.py .
 COPY session_watcher.py .
+COPY openclaw_sqlite.py .
+COPY transcript_parser.py .
 COPY auth.py .
 COPY config_loader.py .
 COPY backup.py .
@@ -35,7 +37,8 @@ COPY config.json .
 VOLUME /data
 
 # Markdown workspace (mount read-only)
-# OpenClaw sessions (mount for watcher)
+# OpenClaw transcript source (mount exactly one of these read-only)
+VOLUME /openclaw-agent
 VOLUME /sessions
 
 VOLUME /workspace

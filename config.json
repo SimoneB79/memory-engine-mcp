@@ -67,6 +67,7 @@
         "max_title_chars": 500
     },
     "sessions_dir": "/sessions",
+    "openclaw_agent_db": "",
     "session_ttl_days": 7,
     "session_poll_interval": 30,
     "session_digest_dir": "/data/session_digests",

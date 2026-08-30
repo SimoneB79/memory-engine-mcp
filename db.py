@@ -119,6 +119,17 @@ class DB:
             c.execute(
                 "CREATE INDEX IF NOT EXISTS idx_atoms_content_hash ON atoms(content_hash)"
             )
+            c.execute(
+                """CREATE TABLE IF NOT EXISTS session_cursors (
+                       source_key TEXT PRIMARY KEY,
+                       session_id TEXT NOT NULL,
+                       generation TEXT NOT NULL,
+                       segment INTEGER NOT NULL DEFAULT 0,
+                       last_seq INTEGER NOT NULL DEFAULT 0,
+                       projection_hash TEXT NOT NULL,
+                       updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+                   )"""
+            )
 
     # ─── ATOMS ───────────────────────────────────────────────
 
