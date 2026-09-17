@@ -139,4 +139,12 @@ def decode_archive(blob: bytes, encoding: str) -> bytes:
         raise ValueError(f"Unsupported transcript archive encoding: {encoding}")
     import zstandard
 
-    return zstandard.ZstdDecompressor().decompress(blob)
+    # OpenClaw writes zstd frames WITHOUT content size in the header (streaming):
+    # ZstdDecompressor().decompress() requires it -> ZstdError. Use the streaming
+    # decompressobj API which does not need the content size.
+    dctx = zstandard.ZstdDecompressor()
+    try:
+        return dctx.decompress(blob)
+    except zstandard.ZstdError:
+        dobj = dctx.decompressobj()
+        return dobj.decompress(blob)
