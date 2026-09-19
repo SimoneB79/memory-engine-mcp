@@ -11,7 +11,7 @@ from urllib.parse import quote
 
 from transcript_parser import build_batches, decode_archive
 
-SUPPORTED_SCHEMA_VERSIONS = {17, 19}
+SUPPORTED_SCHEMA_VERSIONS = {17, 19, 21}
 REQUIRED_TABLES = {
     "schema_meta",
     "session_transcript_active_events",
