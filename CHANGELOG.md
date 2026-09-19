@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.2] — 2026-09-19
+
+### OpenClaw agent DB schema 21 (2026.9.5)
+
+- Added schema 21 to `SUPPORTED_SCHEMA_VERSIONS` (cold transcript storage era,
+  incremental canonical-session validation).
+- Verified read-only scan on a live schema-21 database: active events and
+  cold archives (identity/zstd) decode correctly.
+- Version metadata aligned across `server.py`, `server.json`, and README.
+
+## [1.8.1] — 2026-09-17
+
+- Fixed zstd archive decoding for frames without content size.
+
 ## [1.8.0] — 2026-08-30
 
 ### OpenClaw SQLite transcript ingestion

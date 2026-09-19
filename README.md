@@ -1,7 +1,7 @@
 <!-- mcp-name: io.github.simoneb79/memory-engine-mcp -->
 
 <p align="center">
-  <a href="#"><img alt="Version" src="https://img.shields.io/badge/version-1.7.0-blue" /></a>
+  <a href="#"><img alt="Version" src="https://img.shields.io/badge/version-1.8.2-blue" /></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green" /></a>
   <a href="#"><img alt="Python" src="https://img.shields.io/badge/python-3.12+-blue" /></a>
   <a href="server.json"><img alt="MCP Registry Ready" src="https://img.shields.io/badge/MCP%20Registry-ready-purple" /></a>
@@ -174,7 +174,7 @@ python3 web_ui.py
 # docker-compose.yml
 services:
   memory-engine:
-    image: ghcr.io/simoneb79/memory-engine-mcp:1.7.0
+    image: ghcr.io/simoneb79/memory-engine-mcp:1.8.2
     ports:
       - "8085:8085"
     volumes:
