@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] - 2026-09-24
+
+### OpenClaw agent DB schema 23 (2026.9.6)
+
+- Added schema 23 to `SUPPORTED_SCHEMA_VERSIONS` (selective zstd transcript compression era).
+- `_read_active` now probes `PRAGMA table_info(transcript_events)` and selects `event_zstd` only when present, keeping 17/19/21 databases fully compatible.
+- New `_decode_event_body` decompresses schema 23 zstd BLOB rows using the streaming `decompressobj` fallback (OpenClaw writes frames without content size).
+- Test fixtures: `make_schema_23` and `add_compressed_event`; new test covering mixed identity/zstd event scanning.
+
 ## [1.8.2] — 2026-09-19
 
 ### OpenClaw agent DB schema 21 (2026.9.5)
