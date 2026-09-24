@@ -11,7 +11,12 @@ from urllib.parse import quote
 
 from transcript_parser import build_batches, decode_archive
 
-SUPPORTED_SCHEMA_VERSIONS = {17, 19, 21}
+try:
+    import zstandard as _zstd
+except ImportError:
+    _zstd = None
+
+SUPPORTED_SCHEMA_VERSIONS = {17, 19, 21, 23}
 REQUIRED_TABLES = {
     "schema_meta",
     "session_transcript_active_events",
@@ -120,9 +125,37 @@ class OpenClawSQLiteSource:
         ).lower()
         return any(pattern in haystack for pattern in self.exclude_patterns)
 
+    def _decode_event_body(self, row):
+        """Schema 23 stores each event either as identity TEXT (event_json)
+        or as a level-1 Zstd BLOB (event_zstd). Return the JSON text."""
+        keys = row.keys()
+        body = row["event_json"] if "event_json" in keys else None
+        if body is not None or "event_zstd" not in keys or row["event_zstd"] is None:
+            return body
+        blob = bytes(row["event_zstd"])
+        if _zstd is None:
+            raise OpenClawTranscriptError(
+                "OpenClaw schema 23 compressed transcript rows require "
+                "the zstandard module"
+            )
+        dctx = _zstd.ZstdDecompressor()
+        try:
+            raw = dctx.decompress(blob)
+        except _zstd.ZstdError:
+            # OpenClaw writes streaming zstd frames without content size.
+            raw = dctx.decompressobj().decompress(blob)
+        return raw.decode("utf-8")
+
     def _read_active(self, conn, agent_id):
+        columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(transcript_events)")
+        }
+        zstd_select = (
+            ", e.event_zstd" if "event_zstd" in columns else ", NULL AS event_zstd"
+        )
         rows = conn.execute(
-            """SELECT e.session_id, e.seq, e.event_json, i.event_id,
+            f"""SELECT e.session_id, e.seq, e.event_json{zstd_select}, i.event_id,
                       w.session_key, w.channel, w.chat_type, w.session_scope,
                       COALESCE(w.transcript_updated_at, w.updated_at) AS activity
                FROM session_transcript_active_events a
@@ -138,8 +171,10 @@ class OpenClawSQLiteSource:
         for row in rows:
             if self._excluded(row):
                 continue
-            grouped.setdefault(row["session_id"], []).append(dict(row))
-            metadata[row["session_id"]] = row
+            record = dict(row)
+            record["event_json"] = self._decode_event_body(record)
+            grouped.setdefault(record["session_id"], []).append(record)
+            metadata[record["session_id"]] = record
         batches = []
         for session_id, events in grouped.items():
             activity = int(metadata[session_id]["activity"] or time.time())

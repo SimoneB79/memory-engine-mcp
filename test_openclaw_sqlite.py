@@ -7,6 +7,9 @@ from openclaw_sqlite import (
     OpenClawTranscriptError,
     UnsupportedOpenClawSchema,
 )
+import json
+import time
+
 from openclaw_db_factory import (
     add_active_event,
     add_archive,
@@ -132,3 +135,52 @@ def test_busy_retry_and_terminal_error(tmp_path):
         source._with_retry(
             lambda: (_ for _ in ()).throw(sqlite3.OperationalError("busy"))
         )
+
+
+def test_schema_23_supported_with_zstd_events(tmp_path):
+    """Schema 23: identity TEXT rows plus zstd-compressed BLOB rows both scan."""
+    zstandard = pytest.importorskip("zstandard")
+    from openclaw_db_factory import (
+        add_compressed_event,
+        add_session,
+        create_openclaw_db,
+        make_schema_23,
+        message_event,
+    )
+
+    db_path = tmp_path / "agent.db"
+    conn = create_openclaw_db(str(db_path), schema_version=23)
+    make_schema_23(conn)
+    add_session(conn, "session-s23", "agent:main:s23")
+    conn.execute(
+        "INSERT INTO transcript_events (session_id, seq, event_json, created_at) "
+        "VALUES ('session-s23', 0, ?, ?)",
+        (json.dumps(message_event("e0", "user", "plain hello")), int(time.time())),
+    )
+    add_compressed_event(
+        conn, "session-s23", 1, message_event("e1", "assistant", "compressed hello")
+    )
+    conn.execute(
+        "INSERT INTO transcript_event_identities VALUES ('session-s23', 'e0', 0)"
+    )
+    conn.execute(
+        "INSERT INTO transcript_event_identities VALUES ('session-s23', 'e1', 1)"
+    )
+    for seq in (0, 1):
+        conn.execute(
+            "INSERT INTO session_transcript_active_events "
+            "VALUES ('session-s23', ?, ?, ?)",
+            (seq, seq, seq),
+        )
+    conn.commit()
+    conn.close()
+
+    batches = OpenClawSQLiteSource(str(db_path)).scan()
+    assert batches, "expected batches from schema 23 db"
+    assert {msg["event_id"] for b in batches for msg in b.messages} == {
+        "e0",
+        "e1",
+    }
+    blob_text = json.dumps([msg for b in batches for msg in b.messages])
+    assert "plain hello" in blob_text
+    assert "compressed hello" in blob_text
