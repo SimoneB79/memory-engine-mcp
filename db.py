@@ -69,6 +69,24 @@ class DB:
         # Migrations: add columns introduced after initial release
         self._migrate()
 
+    def log_retrieval(self, tool: str, query: str, domain: str | None, results: list[dict]) -> None:
+        """P4: best-effort retrieval event log. Never raises."""
+        try:
+            with self.conn() as c:
+                rows = [
+                    (tool, query[:300], domain, r.get("id", ""), i,
+                     r.get("rank_score"), 1 if r.get("selected", True) else 0)
+                    for i, r in enumerate(results)
+                ]
+                if rows:
+                    c.executemany(
+                        "INSERT INTO retrieval_events (tool, query, domain, atom_id, rank, score, selected)"
+                        " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        rows,
+                    )
+        except Exception:
+            pass
+
     # ─── MIGRATIONS ──────────────────────────────────────────
 
     def _migrate(self):
@@ -76,6 +94,8 @@ class DB:
         migrations = [
             ("content_hash", "TEXT"),
             ("memory_tier", "TEXT NOT NULL DEFAULT 'semantic'"),
+            ("valid_from", "INTEGER"),
+            ("valid_until", "INTEGER"),
         ]
         with self.conn() as c:
             # Older releases updated the FTS table on any atom update. Recreate the
@@ -130,6 +150,23 @@ class DB:
                        updated_at INTEGER NOT NULL DEFAULT (unixepoch())
                    )"""
             )
+            # P2/P4: temporal validity + retrieval event log
+            c.execute(
+                "CREATE INDEX IF NOT EXISTS idx_atoms_valid_until ON atoms(valid_until)"
+            )
+            c.execute(
+                """CREATE TABLE IF NOT EXISTS retrieval_events (
+                       id INTEGER PRIMARY KEY AUTOINCREMENT,
+                       ts INTEGER NOT NULL DEFAULT (unixepoch()),
+                       tool TEXT NOT NULL,
+                       query TEXT NOT NULL,
+                       domain TEXT,
+                       atom_id TEXT NOT NULL,
+                       rank INTEGER,
+                       score REAL,
+                       selected INTEGER NOT NULL DEFAULT 1
+                   )"""
+            )
 
     # ─── ATOMS ───────────────────────────────────────────────
 
@@ -145,6 +182,8 @@ class DB:
         source_path: str | None = None,
         ttl: int | None = None,
         meta: dict | None = None,
+        valid_from: int | None = None,
+        valid_until: int | None = None,
         memory_tier: str | None = None,
         atom_id: str | None = None,
         content_hash: str | None = None,
@@ -167,10 +206,12 @@ class DB:
             c.execute(
                 """INSERT INTO atoms 
                    (id, type, memory_tier, domain, title, body, confidence, source, source_path, 
-                    ttl, tags, meta, created_at, updated_at, accessed_at, content_hash)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    ttl, tags, meta, created_at, updated_at, accessed_at, content_hash,
+                    valid_from, valid_until)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (atom_id, type, memory_tier, domain, title, body, confidence, source, source_path,
-                 ttl, tags_json, meta_json, now, now, now, content_hash),
+                 ttl, tags_json, meta_json, now, now, now, content_hash,
+                 valid_from, valid_until),
             )
             # Save initial version
             c.execute(
@@ -193,6 +234,8 @@ class DB:
         memory_tier: str | None = None,
         tags: list[str] | None = None,
         meta: dict | None = None,
+        valid_from: int | None = None,
+        valid_until: int | None = None,
         changed_by: str = "ai",
         change_reason: str | None = None,
     ) -> dict | None:
@@ -219,6 +262,7 @@ class DB:
                 ("title", title), ("body", body), ("body_compact", body_compact),
                 ("confidence", confidence), ("weight", weight), ("status", status),
                 ("type", type), ("domain", domain), ("memory_tier", memory_tier),
+                ("valid_from", valid_from), ("valid_until", valid_until),
             ]:
                 if val is not None:
                     updates.append(f"{field} = ?")
@@ -268,6 +312,52 @@ class DB:
             # Poi cancella l'atomo
             cur = c.execute("DELETE FROM atoms WHERE id = ?", (atom_id,))
             return cur.rowcount > 0
+
+    def update_domain(
+        self,
+        atom_ids: list[str],
+        new_domain: str,
+        include_archived: bool = False,
+    ) -> dict:
+        """Update the domain of the given atoms.
+
+        Embeddings and FTS are NOT affected: embed_atom() uses title+body only
+        and atoms_fts indexes title/body/tags only (domain is not indexed).
+
+        Returns {"updated": [ids], "not_found": [ids], "skipped_archived": [ids]}.
+        """
+        if not atom_ids:
+            raise ValueError("atom_ids must not be empty")
+        new_domain = new_domain.strip()
+        if not new_domain:
+            raise ValueError("new_domain must not be empty")
+
+        updated: list[str] = []
+        not_found: list[str] = []
+        skipped_archived: list[str] = []
+        now = int(time.time())
+        with self.conn() as c:
+            for atom_id in atom_ids:
+                row = c.execute(
+                    "SELECT id, status FROM atoms WHERE id = ?", (atom_id,)
+                ).fetchone()
+                if row is None:
+                    not_found.append(atom_id)
+                    continue
+                if row["status"] != "active" and not include_archived:
+                    skipped_archived.append(atom_id)
+                    continue
+                c.execute(
+                    "UPDATE atoms SET domain = ?, updated_at = ? WHERE id = ?",
+                    (new_domain, now, atom_id),
+                )
+                updated.append(atom_id)
+        return {
+            "updated": updated,
+            "not_found": not_found,
+            "skipped_archived": skipped_archived,
+            "new_domain": new_domain,
+        }
 
     def list_atoms(
         self,
@@ -850,8 +940,8 @@ class DB:
                 (old_atom_id, next_ver, old["title"], old["body"], created_by, f"Superseded by {new_id}"),
             )
             c.execute(
-                "UPDATE atoms SET status = 'superseded', meta = ?, updated_at = ? WHERE id = ?",
-                (json.dumps(old_meta), now, old_atom_id),
+                "UPDATE atoms SET status = 'superseded', meta = ?, updated_at = ?, valid_until = COALESCE(valid_until, ?) WHERE id = ?",
+                (json.dumps(old_meta), now, now, old_atom_id),
             )
             c.execute(
                 """INSERT INTO memory_contradictions

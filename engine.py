@@ -15,6 +15,25 @@ class Engine:
 
     # ─── RANKING ─────────────────────────────────────────────
 
+    _INTENT_RULES: list[tuple[str, tuple[str, ...]]] = [
+        # (atom_type, keywords) — heuristic intent boost, no LLM in the hot path
+        ("preference", ("preferisci", "preferenza", "preferenze", "mi piace", "voglio che", "come devo rispondere", "style", "tone")),
+        ("decision", ("perche", "perché", "deciso", "scelto", "scelta", "decisione", "motivo", "ramificata", "trade-off")),
+        ("procedure", ("come si fa", "procedura", "passi", "installare", "configurare", "ripristinare", "deploy", "workflow", "istruzioni")),
+        ("error", ("errore", "error", "fallito", "fallisce", "problema", "rompe", "bug")),
+    ]
+
+    @classmethod
+    def classify_intent(cls, query: str) -> dict[str, float]:
+        """P3: lightweight intent classifier -> type boosts (0.0-0.15)."""
+        q = (query or "").lower()
+        boosts: dict[str, float] = {}
+        for atom_type, keywords in cls._INTENT_RULES:
+            hits = sum(1 for k in keywords if k in q)
+            if hits:
+                boosts[atom_type] = min(0.15, 0.05 * hits)
+        return boosts
+
     def rank_results(self, fts_results: list[dict], query: str) -> list[dict]:
         """
         Multi-factor ranking: FTS score × semantic × confidence × recency × weight.
@@ -37,6 +56,8 @@ class Engine:
             "stale": -0.10,
             "merged": -0.35,
         })
+        expired_penalty = cfg.get("expired_penalty", -0.30)
+        intent_boosts = self.classify_intent(query)
 
         now = int(time.time())
         scored = []
@@ -65,6 +86,12 @@ class Engine:
 
             tier_boost = tier_boosts.get(row.get("memory_tier", "semantic"), 0.0)
             status_penalty = status_penalties.get(row.get("status", "active"), 0.0)
+            # P2: expired temporal validity demotes historical versions
+            vuntil = row.get("valid_until")
+            if vuntil and now > vuntil:
+                status_penalty += expired_penalty
+            # P3: intent-aware type boost
+            intent_boost = intent_boosts.get(row.get("type") or "", 0.0)
 
             # Combined score
             score = (
@@ -75,6 +102,7 @@ class Engine:
                 + w_weight * weight_norm
                 + tier_boost
                 + status_penalty
+                + intent_boost
             )
             score = max(0.0, min(1.0, score))
 
@@ -87,6 +115,7 @@ class Engine:
                 "weight": round(weight_norm, 3),
                 "tier_boost": round(tier_boost, 3),
                 "status_penalty": round(status_penalty, 3),
+                "intent_boost": round(intent_boost, 3),
                 "final": round(score, 4),
             }
             scored.append(row)
@@ -179,7 +208,9 @@ class Engine:
                 min_strength=graph_min_strength,
             )
 
-        return [self._format_recall_result(r) for r in ranked[:limit]]
+        selected = [self._format_recall_result(r) for r in ranked[:limit]]
+        self.db.log_retrieval("recall", query, domain, selected)
+        return selected
 
     def _expand_graph_context(
         self,

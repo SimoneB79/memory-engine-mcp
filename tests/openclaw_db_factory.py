@@ -111,3 +111,48 @@ def add_archive(
             int(time.time()),
         ),
     )
+
+
+def make_schema_23(conn):
+    """Upgrade fixture to OpenClaw schema 23 transcript_events layout."""
+    conn.executescript(
+        """
+        CREATE TABLE transcript_events_v23 (
+          session_id TEXT NOT NULL,
+          seq INTEGER NOT NULL,
+          event_json TEXT,
+          created_at INTEGER NOT NULL,
+          event_zstd BLOB,
+          event_utf8_bytes INTEGER,
+          navigation_json TEXT,
+          PRIMARY KEY (session_id, seq)
+        );
+        """
+    )
+    conn.execute(
+        "INSERT INTO transcript_events_v23 "
+        "SELECT session_id, seq, event_json, created_at, NULL, NULL, NULL "
+        "FROM transcript_events"
+    )
+    conn.execute("DROP TABLE transcript_events")
+    conn.execute("ALTER TABLE transcript_events_v23 RENAME TO transcript_events")
+
+
+def add_compressed_event(conn, session_id, seq, event_dict):
+    """Insert a schema 23 zstd-compressed transcript event."""
+    import zstandard as zstd
+
+    body = json.dumps(event_dict).encode("utf-8")
+    blob = zstd.ZstdCompressor(level=1).compress(body)
+    conn.execute(
+        "INSERT INTO transcript_events "
+        "(session_id, seq, event_json, created_at, event_zstd, "
+        " event_utf8_bytes, navigation_json) "
+        "VALUES (?, ?, NULL, ?, ?, ?, ?)",
+        (session_id, seq, int(time.time()), blob, len(body),
+         json.dumps({"version": 1, "report": {"kind": "canonical"},
+                     "navigation": {}, "reset": {}, "model": {},
+                     "modelBytes": len(body),
+                     "modelWithoutCheckpointBytes": len(body),
+                     "withoutCustomDataBytes": len(body)})),
+    )

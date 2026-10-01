@@ -119,6 +119,7 @@ class CognitiveCurator:
         domain: str | None = None,
         limit: int = 8,
         graph_depth: int = 1,
+        token_budget: int | None = None,
     ) -> dict[str, Any]:
         """
         Build a task-oriented context pack: direct recall hits + graph neighbors
@@ -148,7 +149,7 @@ class CognitiveCurator:
                 if a.get("type") in ("procedure", "preference", "decision") and a["id"] not in focus_ids:
                     procedures.append(a)
 
-        return {
+        pack = {
             "query": query,
             "domain": domain,
             "focus_atoms": [self._slim_atom(a) for a in focus],
@@ -157,6 +158,82 @@ class CognitiveCurator:
             "graph_edges": edges[:30],
             "usage_hint": "Use focus_atoms first; use context_atoms for adjacent facts; inspect full atom only when needed.",
         }
+        if token_budget is not None:
+            pack = self._apply_token_budget(pack, token_budget)
+        # P4: best-effort retrieval event log
+        logged = list(pack.get("focus_atoms", [])) + list(pack.get("key_procedures_decisions", [])) + list(pack.get("context_atoms", []))
+        self.db.log_retrieval("working_set", query, domain, logged)
+        return pack
+
+    @staticmethod
+    def _estimate_tokens(atom: dict) -> int:
+        snippet = atom.get("snippet") or ""
+        return max(16, (len(atom.get("title") or "") + len(snippet)) // 4)
+
+    # Default per-category caps as shares of the global budget; unused
+    # tokens are borrowed back into the pool (waterfall), never wasted.
+    _BUDGET_SECTIONS = (
+        ("focus_atoms", 0.50),
+        ("key_procedures_decisions", 0.25),
+        ("context_atoms", 0.25),
+    )
+
+    def _apply_token_budget(self, pack: dict, budget: int) -> dict:
+        # Categorized pack within a token budget (~chars/4), built as a
+        # layer over existing retrieval sections with budget borrowing.
+        remaining = budget
+        candidates_seen = 0
+        selected = 0
+        tokens_by_section = {}
+        # first pass: honor soft caps; second pass: borrow leftovers
+        passes = ("capped", "borrow")
+        kept_by_section: dict[str, list] = {n: [] for n, _ in self._BUDGET_SECTIONS}
+        spent_by_section: dict[str, int] = {n: 0 for n, _ in self._BUDGET_SECTIONS}
+        for pass_name in passes:
+            for name, share in self._BUDGET_SECTIONS:
+                if pass_name == "capped":
+                    cap = max(0, int(budget * share)) - spent_by_section[name]
+                else:
+                    cap = remaining
+                if cap <= 0:
+                    continue
+                for atom in pack.get(name, []):
+                    if pass_name == "borrow" and atom in kept_by_section[name]:
+                        continue
+                    if pass_name == "capped" and atom in kept_by_section[name]:
+                        continue
+                    cost = self._estimate_tokens(atom)
+                    if cost > remaining:
+                        continue
+                    kept_by_section[name].append(atom)
+                    spent_by_section[name] += cost
+                    remaining -= cost
+                    selected += 1
+                    atom.setdefault("category", atom.get("type") or "episodic")
+                    atom.setdefault("reason", name)
+                    if pass_name == "capped" and spent_by_section[name] >= max(0, int(budget * share)):
+                        break
+                if remaining <= 0:
+                    break
+            if remaining <= 0:
+                break
+        for name, _ in self._BUDGET_SECTIONS:
+            candidates_seen += len(pack.get(name, []))
+            pack[name] = kept_by_section[name]
+            tokens_by_section[name] = spent_by_section[name]
+        report = {
+            "requested": budget,
+            "used": budget - remaining,
+            "candidates_seen": candidates_seen,
+            "selected": selected,
+            "tokens_by_section": tokens_by_section,
+        }
+        pack["token_budget"] = report
+        pack["usage_hint"] += (
+            " Token budget applied: prioritize focus_atoms and"
+            " key_procedures_decisions; fetch full atoms on demand."
+        )
+        return pack
 
     # ─── CURATION ───────────────────────────────────────────
 

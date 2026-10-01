@@ -8,6 +8,63 @@ from db import DB
 
 
 # ════════════════════════════════════════════════════════════
+# UPDATE DOMAIN
+# ════════════════════════════════════════════════════════════
+
+class TestUpdateDomain:
+    def test_basic_move(self, db):
+        a = db.create_atom("Titolo", "Body", type="fact", domain="projects/x")
+        r = db.update_domain([a["id"]], "project:x")
+        assert r["updated"] == [a["id"]]
+        assert r["not_found"] == []
+        assert r["skipped_archived"] == []
+        assert db.get_atom(a["id"])["domain"] == "project:x"
+
+    def test_bulk_and_not_found(self, db):
+        a1 = db.create_atom("A", "b", type="fact", domain="d1")
+        a2 = db.create_atom("B", "b", type="fact", domain="d2")
+        r = db.update_domain([a1["id"], a2["id"], "nope"], "target")
+        assert sorted(r["updated"]) == sorted([a1["id"], a2["id"]])
+        assert r["not_found"] == ["nope"]
+        assert db.get_atom(a1["id"])["domain"] == "target"
+        assert db.get_atom(a2["id"])["domain"] == "target"
+
+    def test_archived_skipped_by_default(self, db):
+        a = db.create_atom("A", "b", type="fact", domain="d1")
+        with db.conn() as c:
+            c.execute("UPDATE atoms SET status='archived' WHERE id=?", (a["id"],))
+        r = db.update_domain([a["id"]], "target")
+        assert r["updated"] == []
+        assert r["skipped_archived"] == [a["id"]]
+        assert db.get_atom(a["id"])["domain"] == "d1"
+
+    def test_archived_included_when_requested(self, db):
+        a = db.create_atom("A", "b", type="fact", domain="d1")
+        with db.conn() as c:
+            c.execute("UPDATE atoms SET status='archived' WHERE id=?", (a["id"],))
+        r = db.update_domain([a["id"]], "target", include_archived=True)
+        assert r["updated"] == [a["id"]]
+        assert db.get_atom(a["id"])["domain"] == "target"
+
+    def test_empty_ids_raises(self, db):
+        with pytest.raises(ValueError):
+            db.update_domain([], "target")
+
+    def test_empty_domain_raises(self, db):
+        a = db.create_atom("A", "b", type="fact", domain="d1")
+        with pytest.raises(ValueError):
+            db.update_domain([a["id"]], "   ")
+
+    def test_updated_at_bumped(self, db):
+        a = db.create_atom("A", "b", type="fact", domain="d1")
+        old = db.get_atom(a["id"])["updated_at"]
+        with db.conn() as c:
+            c.execute("UPDATE atoms SET updated_at=? WHERE id=?", (old - 100, a["id"]))
+        db.update_domain([a["id"]], "target")
+        assert db.get_atom(a["id"])["updated_at"] >= old
+
+
+# ════════════════════════════════════════════════════════════
 # ATOM CRUD
 # ════════════════════════════════════════════════════════════
 

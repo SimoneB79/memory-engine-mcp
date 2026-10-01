@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 # ─── Version ────────────────────────────────────────────────
 
-__version__ = "1.9.0"
+__version__ = "1.8.2"
 
 from db import DB
 from engine import Engine
@@ -539,6 +539,34 @@ def merge_atoms(primary_id: str, secondary_id: str) -> str:
             "new_confidence": result["confidence"],
         }, ensure_ascii=False)
     except KeyError as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def update_domain(
+    atom_ids: list[str],
+    new_domain: str,
+    include_archived: bool = False,
+) -> str:
+    """
+    Update the domain of one or more atoms (bulk-friendly).
+
+    Useful to consolidate fragmented domains (e.g. 'projects/x' vs 'project:x').
+    Does NOT touch embeddings or FTS (domain is not part of the indexed text).
+
+    Args:
+        atom_ids: list of atom ids to move
+        new_domain: target domain
+        include_archived: also update non-active atoms (default False)
+
+    Returns JSON: {updated, not_found, skipped_archived, new_domain}
+    """
+    try:
+        result = db.update_domain(
+            atom_ids, new_domain, include_archived=include_archived
+        )
+        return json.dumps(result, ensure_ascii=False)
+    except ValueError as e:
         return json.dumps({"error": str(e)})
 
 
@@ -1122,6 +1150,7 @@ def working_set(
     domain: str | None = None,
     limit: int = 8,
     graph_depth: int = 1,
+    token_budget: int | None = 2000,
 ) -> str:
     """
     Build a task-oriented context pack before doing work.
@@ -1131,6 +1160,7 @@ def working_set(
     """
     result = curator.working_set(
         query=query, domain=domain, limit=limit, graph_depth=graph_depth,
+        token_budget=token_budget,
     )
     return json.dumps(result, ensure_ascii=False, indent=2)
 

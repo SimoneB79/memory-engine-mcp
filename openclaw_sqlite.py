@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import sqlite3
+import tempfile
 import time
 from pathlib import Path
 from urllib.parse import quote
@@ -51,16 +53,43 @@ class OpenClawSQLiteSource:
         self.max_content_chars = max_content_chars
         self.busy_timeout_ms = busy_timeout_ms
         self.busy_retries = max(1, busy_retries)
+        self.snapshot_dir = Path(tempfile.gettempdir()) / "oc-db-snapshots"
+
+    def _snapshot(self) -> Path:
+        # WAL db on a read-only mount cannot be opened directly: copy db+wal+shm
+        # into a writable temp dir and read the copy. OpenClaw files untouched.
+        self.snapshot_dir.mkdir(parents=True, exist_ok=True)
+        target = self.snapshot_dir / (self.db_path.name + "." + str(int(time.time() * 1000)) + ".snap")
+        shutil.copy2(self.db_path, target)
+        for suffix in ("-wal", "-shm"):
+            side = self.db_path.with_name(self.db_path.name + suffix)
+            if side.is_file():
+                shutil.copy2(side, target.with_name(target.name + suffix))
+        snaps = sorted(self.snapshot_dir.glob(self.db_path.name + ".*.snap"))
+        for old in snaps[:-3]:
+            for f in (old, old.with_name(old.name + "-wal"), old.with_name(old.name + "-shm")):
+                try:
+                    f.unlink()
+                except FileNotFoundError:
+                    pass
+        return target
 
     def scan(self):
         if not self.db_path.is_file():
             raise OpenClawTranscriptError(
                 f"OpenClaw agent DB not found: {self.db_path}"
             )
-        return self._with_retry(self._scan_once)
+        try:
+            return self._with_retry(self._scan_once)
+        except sqlite3.OperationalError as exc:
+            if "unable to open" not in str(exc).lower():
+                raise
+            # WAL on read-only mount: retry on a writable snapshot
+            return self._with_retry(lambda: self._scan_once(snapshot=True))
 
-    def _connect(self):
-        uri = f"file:{quote(str(self.db_path))}?mode=ro"
+    def _connect(self, db_file=None):
+        target = db_file if db_file is not None else self.db_path
+        uri = f"file:{quote(str(target))}?mode=ro"
         conn = sqlite3.connect(
             uri, uri=True, timeout=self.busy_timeout_ms / 1000
         )
@@ -84,8 +113,9 @@ class OpenClawSQLiteSource:
                 time.sleep(delay)
                 delay *= 2
 
-    def _scan_once(self):
-        conn = self._connect()
+    def _scan_once(self, snapshot=False):
+        db_file = self._snapshot() if snapshot else self.db_path
+        conn = self._connect(db_file)
         try:
             agent_id = self._validate_schema(conn)
             batches = self._read_active(conn, agent_id)

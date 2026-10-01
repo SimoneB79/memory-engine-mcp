@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] — 2026-10-01
+
+### Added
+- **Token-budgeted working_set**: new token_budget param (default 2000 in the MCP tool); categorized pack with waterfall budget borrowing (focus 50% / key procedures-decisions 25% / context 25%), per-item category+reason metadata, builder stats (candidates_seen, selected, tokens_by_section).
+- **Temporal validity**: valid_from / valid_until columns on atoms (idempotent migration); persisted by create/update; memory_contradict closes the old atom validity automatically; expired atoms get a configurable ranking penalty (expired_penalty, default -0.30).
+- **Intent-aware retrieval**: lightweight heuristic classify_intent boosts preference/decision/procedure/error atoms (max +0.15) in ranking; new intent_boost field in rank breakdown.
+- **Retrieval event log**: new retrieval_events table (tool/query/domain/atom_id/rank/score/selected) written best-effort by recall and working_set - data foundation for future learned ranking.
+
+### Fixed
+- WAL snapshot fallback in openclaw_sqlite.py: OpenClaw agent DBs in WAL mode on read-only mounts can now be read (copy db+wal+shm to writable temp snapshot); fixes session_watcher startup crash on all deployments.
+
 ## [1.9.0] - 2026-09-24
 
 ### OpenClaw agent DB schema 23 (2026.9.6)

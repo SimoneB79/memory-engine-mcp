@@ -27,7 +27,9 @@ CREATE TABLE IF NOT EXISTS atoms (
     access_count  INTEGER NOT NULL DEFAULT 0,
     ttl           INTEGER,                     -- NULL = permanent, otherwise epoch expiry
     tags          TEXT DEFAULT '[]',           -- JSON array
-    meta          TEXT DEFAULT '{}'            -- JSON object for extensions
+    meta          TEXT DEFAULT '{}',           -- JSON object for extensions
+    valid_from INTEGER,
+    valid_until INTEGER
 );
 
 -- ============================================================
@@ -195,3 +197,18 @@ CREATE INDEX IF NOT EXISTS idx_errors_resolved ON error_memory(is_resolved);
 CREATE INDEX IF NOT EXISTS idx_errors_severity ON error_memory(severity);
 CREATE INDEX IF NOT EXISTS idx_contradictions_old ON memory_contradictions(old_atom_id);
 CREATE INDEX IF NOT EXISTS idx_contradictions_new ON memory_contradictions(new_atom_id);
+
+-- P4: retrieval event log (best-effort, never blocks reads)
+CREATE TABLE IF NOT EXISTS retrieval_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts INTEGER NOT NULL DEFAULT (unixepoch()),
+    tool TEXT NOT NULL,
+    query TEXT NOT NULL,
+    domain TEXT,
+    atom_id TEXT NOT NULL,
+    rank INTEGER,
+    score REAL,
+    selected INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_retrieval_events_ts ON retrieval_events(ts);
+CREATE INDEX IF NOT EXISTS idx_retrieval_events_atom ON retrieval_events(atom_id);
