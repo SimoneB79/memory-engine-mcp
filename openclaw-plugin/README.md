@@ -1,48 +1,42 @@
-# Memory Engine TS — OpenClaw Plugin
+# Memory Engine — OpenClaw Plugin
 
-Native memory engine for OpenClaw: 19 agent tools, event-driven session ingest,
-and a conservative night curator — all in one plugin, no external MCP server.
+Native memory engine for OpenClaw: **45 agent tools**, event-driven session ingest,
+semantic search, backup/import/export, learning, a conservative curator, and a
+native Control UI page — all in one plugin, no external MCP server.
+
+Successor of the Python `memory-engine` MCP server (same versioning lineage).
 
 ## Features
 
-- **17 memory tools**: recall (FTS + ranking), working_set (token-budgeted context pack),
-  remember, get_atom, list_atoms, link/search_graph (knowledge graph), contradict,
-  impact, preference_search, error_check/error_log (error memory), stats,
-  session_summary/generate_session_digest
-- **Curator (v3.1)**: `memory_curator_run` — conservative maintenance pass
-  (extractive body_compact, auto-bonds by domain/keyword/pattern, isolated atom
-  classification, promotion and merge candidates). Dry-run by default.
-- **Cognitive status**: `memory_cognitive_status` — graph health metrics + recommendations
-- **Event hooks**: buffers chat messages and periodically (60s, only when changed)
-  ingests `session_msg` atoms and generates/refreshes `session_digest` atoms (7-day TTL)
+**45 memory tools:**
+- **Core**: recall (FTS + ranking, optional semantic merge), working_set (token-budgeted context pack), remember, get_atom, list_atoms, stats, memory_summary
+- **Knowledge graph**: link, search_graph, contradict, impact, suggest_bonds(+all), find_similar
+- **Curator**: memory_curator_run — conservative maintenance (extractive body_compact, auto-bonds by domain/keyword/pattern, isolated atom classification, promotion and merge candidates). Dry-run by default. memory_cognitive_status for graph health metrics
+- **Semantic** (Ollama): semantic_search with FTS fallback, reindex_embeddings, optional `semantic:true` on recall
+- **Maintenance**: decay_run, cleanup_sessions, cleanup_duplicates, merge_atoms, delete_atom (soft by default), unlink, update_domain, classify_memory_tier
+- **Backup**: backup_database, restore_database (confirm required), list_backups, export_all, export_atom, import_data, import_markdown
+- **Learning**: learning_run, ask_pending, answer_human (human_questions flow)
+- **Errors**: error_check, error_log, error_list, list_contradictions, preference_search
+
+**Native Control UI page** (5 tabs): live cognitive stats, FTS atom search with type/domain filters, atom detail with bonds, curator dry-run/apply, backup management, pending human questions with inline answers.
+
+**Event hooks**: buffers chat messages and periodically (60s, only when changed) ingests `session_msg` atoms and refreshes `session_digest` atoms (7-day TTL).
 
 ## Install
 
 ```bash
-openclaw plugins install memory-engine-ts
-```
-
-Or from a local package:
-
-```bash
-openclaw plugins install ./openclaw-plugin-memory-engine-ts-3.1.0.tgz
+openclaw plugins install clawhub:openclaw-plugin-memory-engine
+# or from npm
+openclaw plugins install npm:openclaw-plugin-memory-engine
 ```
 
 ## Configuration
 
-The database path is read from the `MEMORY_DB_PATH` environment variable
-(default `/data/memory.db`). The SQLite database is created with the expected
-schema on first use.
+- `MEMORY_DB_PATH` — SQLite database path (default `/data/memory.db`, schema created on first use)
+- `OLLAMA_HOST` — Ollama base URL for embeddings (default `http://ollama:11434`)
+- `ME_EMBED_MODEL` — embedding model (default `nomic-embed-text`)
 
-Curator tuning (optional) via plugin config `curator`: max_atoms_per_run,
-compact_min_body_chars, bond_limit_per_atom, stale_after_days and more —
-sensible defaults apply.
-
-## Session hooks
-
-- `message_received` / `agent_end`: buffer chat content per session
-- every 60s: ingest new messages as episodic `session_msg` atoms (7-day TTL)
-  and refresh the session digest atom
+Enable the plugin UI page once via **Control UI → Settings → Labs → Custom plugin UI**.
 
 ## License
 
