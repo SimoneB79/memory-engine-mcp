@@ -51,7 +51,7 @@ export default definePluginEntry({
     const me = createTools(dbPath);
     const curator = new Curator((me as any).__db, (me as any).__engine, ((api as any).config ?? {}).curator ?? {});
     const ingestCfg: any = (((api as any).config ?? {}).ingest ?? {});
-    const ingestEnabled: boolean = ingestCfg.enabled !== false;
+    const ingestEnabled: boolean = ingestCfg.enabled === true;
     const retentionDays: number = Number(ingestCfg.retention_days ?? 7);
     const logger = (api as any).logger ?? console;
 
@@ -168,6 +168,6 @@ export default definePluginEntry({
     }, FLUSH_MS);
     (timer as any).unref?.();
 
-    logger.info?.("[memory-engine] v" + VERSION + " registered: " + defs.length + " tools + ingest " + (ingestEnabled ? "on (retention " + retentionDays + "d)" : "OFF") + " (" + (FLUSH_MS / 1000) + "s)");
+    logger.info?.("[memory-engine] v" + VERSION + " registered: " + defs.length + " tools + ingest " + (ingestEnabled ? "on (retention " + retentionDays + "d)" : "off (enable via config ingest.enabled=true)") + " (" + (FLUSH_MS / 1000) + "s)");
   },
 });

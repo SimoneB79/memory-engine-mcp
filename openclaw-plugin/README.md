@@ -40,7 +40,7 @@ Enable the plugin UI page once via **Control UI → Settings → Labs → Custom
 
 ## Privacy & Data
 
-- **What is stored**: with session ingest enabled (default), OpenClaw chat messages are stored as session_msg atoms in the configured SQLite database, and a per-session digest is refreshed periodically.
+- **What is stored**: with session ingest enabled, OpenClaw chat messages are stored as session_msg atoms in the configured SQLite database, and a per-session digest is refreshed periodically.
 - **Opt out**: set ingest.enabled false in the plugin config to stop capturing chats entirely; existing captured data stays until cleaned.
 - **Automatic cleanup**: session_msg and session_digest atoms carry a TTL (default 7 days, configurable via ingest.retention_days) and are expired automatically by the periodic flush.
 - **Manual cleanup**: use memory_cleanup_sessions, memory_delete_atom, memory_export_all to review or purge stored contents.
