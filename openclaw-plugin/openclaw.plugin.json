@@ -1,0 +1,37 @@
+{
+  "id": "memory-engine",
+  "name": "Memory Engine",
+  "description": "Native Memory Engine: 19 memory tools (recall, working set, remember, bonds, curator) + periodic session ingest/digest for OpenClaw.",
+  "version": "3.1.0",
+  "configSchema": {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+  },
+  "activation": {
+    "onStartup": true
+  },
+  "contracts": {
+    "tools": [
+      "memory_version",
+      "memory_recall",
+      "memory_remember",
+      "memory_working_set",
+      "memory_get_atom",
+      "memory_list_atoms",
+      "memory_link",
+      "memory_search_graph",
+      "memory_contradict",
+      "memory_impact",
+      "memory_preference_search",
+      "memory_error_check",
+      "memory_error_log",
+      "memory_stats",
+      "memory_session_summary",
+      "memory_generate_session_digest",
+      "memory_admin",
+      "memory_curator_run",
+      "memory_cognitive_status"
+    ]
+  }
+}
