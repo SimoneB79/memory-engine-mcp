@@ -7,7 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import { Engine, Row } from "./engine.js";
 import { buildSessionDigest } from "./digest.js";
 
-export const VERSION = "3.1.0";
+export const VERSION = "4.0.0";
 
 export function createTools(dbPath: string) {
   const db = new DatabaseSync(dbPath);
@@ -23,8 +23,16 @@ export function createTools(dbPath: string) {
     __db: db,
     version: () => ({ version: VERSION, note: "Native Memory Engine plugin: 19 tools + session ingest/digest + curator." }),
 
-    recall: (query: string, limit = 5, domain?: string) =>
-      engine.recall(query, limit, { domain: domain ?? undefined, semantic: false }).map(slim),
+    recall: async (query: string, limit = 5, domain?: string, semantic = false) => {
+      const base = engine.recall(query, limit, { domain: domain ?? undefined, semantic: false });
+      if (!semantic) return base.map(slim);
+      const { semanticSearch } = await import("./embeddings.js");
+      const sem = await semanticSearch(db, query, limit, domain);
+      const seen = new Set(base.map((r: any) => r.id));
+      const merged = base.map(slim);
+      for (const s of sem) { if (!seen.has(s.id)) merged.push(slim(s as any)); }
+      return merged;
+    },
 
     semantic_search: async (query: string, limit = 10, domain?: string) => {
       const { semanticSearch } = await import("./embeddings.js");

@@ -1,15 +1,18 @@
 {
   "id": "memory-engine",
   "name": "Memory Engine",
-  "description": "Native Memory Engine: 19 memory tools (recall, working set, remember, bonds, curator) + periodic session ingest/digest for OpenClaw.",
-  "version": "3.1.0",
+  "description": "Native Memory Engine: 45 memory tools, session ingest/digest, curator and Control UI.",
+  "version": "4.0.0",
   "configSchema": {
     "type": "object",
-    "properties": {},
-    "additionalProperties": false
+    "additionalProperties": false,
+    "properties": {}
   },
   "activation": {
     "onStartup": true
+  },
+  "controlUi": {
+    "entry": "dist/control-ui/14e2bd207bb33b0189bdfc2712c6eee0f901d10bca0f92cb7773a4bd0f93e10b/index.js"
   },
   "contracts": {
     "tools": [
@@ -31,7 +34,33 @@
       "memory_generate_session_digest",
       "memory_admin",
       "memory_curator_run",
-      "memory_cognitive_status"
+      "memory_cognitive_status",
+      "memory_summary",
+      "memory_delete_atom",
+      "memory_unlink",
+      "memory_error_list",
+      "memory_list_contradictions",
+      "memory_decay_run",
+      "memory_update_domain",
+      "memory_classify_memory_tier",
+      "memory_cleanup_sessions",
+      "memory_find_similar",
+      "memory_merge_atoms",
+      "memory_cleanup_duplicates",
+      "memory_semantic_search",
+      "memory_reindex_embeddings",
+      "memory_suggest_bonds",
+      "memory_suggest_bonds_all",
+      "memory_backup_database",
+      "memory_restore_database",
+      "memory_list_backups",
+      "memory_export_all",
+      "memory_export_atom",
+      "memory_import_data",
+      "memory_import_markdown",
+      "memory_learning_run",
+      "memory_ask_pending",
+      "memory_answer_human"
     ]
   }
 }

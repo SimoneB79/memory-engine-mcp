@@ -1,17 +1,18 @@
 {
   "name": "openclaw-plugin-memory-engine",
-  "version": "3.1.1",
+  "version": "4.0.0",
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && openclaw plugins build",
     "plugin:build": "npm run build && openclaw plugins build --entry ./dist/index.js",
     "plugin:validate": "npm run build && openclaw plugins validate --entry ./dist/index.js",
     "test": "vitest run --config ./vitest.config.ts"
   },
   "files": [
+    "README.md",
+    "assets",
     "dist",
-    "openclaw.plugin.json",
-    "README.md"
+    "openclaw.plugin.json"
   ],
   "peerDependencies": {
     "openclaw": ">=2026.5.17"
@@ -22,7 +23,7 @@
   "devDependencies": {
     "openclaw": "latest",
     "typescript": "^7.0.2",
-    "vitest": "^3.2.0"
+    "vitest": "^3.3.0"
   },
   "openclaw": {
     "extensions": [
@@ -33,7 +34,8 @@
     },
     "build": {
       "openclawVersion": "2026.9.7"
-    }
+    },
+    "controlUi": "./src/control-ui.ts"
   },
   "description": "Native Memory Engine for OpenClaw: 19 memory tools + session ingest/digest + curator",
   "license": "MIT",

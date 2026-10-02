@@ -197,7 +197,7 @@ export class Curator {
     };
   }
 
-  private suggestBondsForAtom(atom: Row, seen: Set<string>): any[] {
+  suggestBondsForAtom(atom: Row, seen: Set<string>): any[] {
     return [
       ...this.domainCluster(atom, seen),
       ...this.keywordOverlap(atom, seen),
