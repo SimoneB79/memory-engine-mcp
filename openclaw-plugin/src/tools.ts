@@ -7,7 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import { Engine, Row } from "./engine.js";
 import { buildSessionDigest } from "./digest.js";
 
-export const VERSION = "4.2.0";
+export const VERSION = "4.2.1";
 
 export function createTools(dbPath: string) {
   const db = new DatabaseSync(dbPath);
