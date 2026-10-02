@@ -50,6 +50,9 @@ export default definePluginEntry({
     const dbPath = process.env.MEMORY_DB_PATH ?? "/data/memory.db";
     const me = createTools(dbPath);
     const curator = new Curator((me as any).__db, (me as any).__engine, ((api as any).config ?? {}).curator ?? {});
+    const ingestCfg: any = (((api as any).config ?? {}).ingest ?? {});
+    const ingestEnabled: boolean = ingestCfg.enabled !== false;
+    const retentionDays: number = Number(ingestCfg.retention_days ?? 7);
     const logger = (api as any).logger ?? console;
 
     // ── Tools ─────────────────────────────────────────────
@@ -97,6 +100,7 @@ export default definePluginEntry({
 
     (api.on as any)("message_received", (event: any) => {
       try {
+        if (!ingestEnabled) return;
         const sid = String(event?.sessionId ?? event?.sessionKey ?? "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48) || "unknown";
         const content = String(event?.body ?? event?.text ?? event?.content ?? "").slice(0, 2000);
         if (!content) return;
@@ -108,6 +112,7 @@ export default definePluginEntry({
 
     (api.on as any)("agent_end", (event: any) => {
       try {
+        if (!ingestEnabled) return;
         const sid = String(event?.sessionId ?? event?.sessionKey ?? "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48) || "unknown";
         const text = String(event?.reply ?? event?.finalMessage ?? event?.text ?? "").slice(0, 1000);
         if (!text) return;
@@ -118,6 +123,12 @@ export default definePluginEntry({
     });
 
     function flushSession(sid: string, sidRaw: string) {
+        let retention = retentionDays;
+        try {
+            (me as any).__db.prepare("CREATE TABLE IF NOT EXISTS plugin_settings (key TEXT PRIMARY KEY, value TEXT)").run();
+            const row = (me as any).__db.prepare("SELECT value FROM plugin_settings WHERE key='retention_days'").get();
+            if (row && Number(row.value) > 0) retention = Number(row.value);
+        } catch { /* fallback config */ }
       const db: DatabaseSync = (me as any).__db;
       const now = Math.floor(Date.now() / 1000);
       const msgs = buffer.get(sid) ?? [];
@@ -130,14 +141,14 @@ export default definePluginEntry({
         const atomId = "smsg_" + hash;
         db.prepare(
           "INSERT OR IGNORE INTO atoms (id, type, memory_tier, domain, title, body, confidence, status, source, weight, tags, meta, created_at, updated_at, accessed_at, ttl) VALUES (?,?,?,?,?,?,?,'active','ai',1.0,'[]','{}',?,?,?,?)"
-        ).run(atomId, "session_msg", "episodic", "session/" + sid, "[" + m.role + "] " + m.content.slice(0, 60), JSON.stringify({ role: m.role, content: m.content, timestamp: m.ts }), 0.7, now, now, now, now + 7 * 86400);
+        ).run(atomId, "session_msg", "episodic", "session/" + sid, "[" + m.role + "] " + m.content.slice(0, 60), JSON.stringify({ role: m.role, content: m.content, timestamp: m.ts }), 0.7, now, now, now, now + retention * 86400);
       }
       // digest from ingested atoms (uses session_msg domain rows)
       const draft = buildSessionDigest(db, sid, { ocSessionId: sidRaw });
       if (draft) {
         db.prepare(
           "INSERT OR REPLACE INTO atoms (id, type, memory_tier, domain, title, body, confidence, status, source, weight, tags, meta, created_at, updated_at, accessed_at, ttl) VALUES (?,?,?,?,?,?,0.7,'active','ai',1.0,'[]','{}',?,?,?,?)"
-        ).run(draft.id, "session_digest", "episodic", "session/" + sid, draft.title, draft.body, now, now, now, now + 7 * 86400);
+        ).run(draft.id, "session_digest", "episodic", "session/" + sid, draft.title, draft.body, now, now, now, now + retention * 86400);
       }
       flushedCount.set(sid, msgs.length);
       logger.info?.("[memory-engine] periodic flush session " + sid + " (" + fresh.length + " new msgs, digest " + (draft ? "ok" : "skip") + ")");
@@ -146,6 +157,8 @@ export default definePluginEntry({
     const FLUSH_MS = 60_000;
     const timer = setInterval(() => {
       try {
+        // automatic cleanup: expire session atoms whose TTL has passed
+        try { (me as any).__db.prepare("UPDATE atoms SET status='expired', updated_at=unixepoch() WHERE type IN ('session_msg','session_digest') AND status='active' AND ttl IS NOT NULL AND ttl <= unixepoch()").run(); } catch {}
         for (const [sid, arr] of buffer) {
           if (arr.length > (flushedCount.get(sid) ?? 0)) flushSession(sid, sid);
         }
@@ -155,6 +168,6 @@ export default definePluginEntry({
     }, FLUSH_MS);
     (timer as any).unref?.();
 
-    logger.info?.("[memory-engine] v" + VERSION + " registered: " + defs.length + " tools + periodic ingest/digest (" + (FLUSH_MS / 1000) + "s)");
+    logger.info?.("[memory-engine] v" + VERSION + " registered: " + defs.length + " tools + ingest " + (ingestEnabled ? "on (retention " + retentionDays + "d)" : "OFF") + " (" + (FLUSH_MS / 1000) + "s)");
   },
 });

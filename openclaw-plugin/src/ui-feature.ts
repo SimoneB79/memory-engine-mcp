@@ -13,6 +13,15 @@ export function createFeatureHandlers() {
     const q = (sql: string, ...p: any[]) => db.prepare(sql).all(...p) as any[];
     const q1 = (sql: string, ...p: any[]) => db.prepare(sql).get(...p) as any;
     const x = (sql: string, ...p: any[]) => db.prepare(sql).run(...p);
+
+    function getSettings() {
+        try {
+            db.prepare("CREATE TABLE IF NOT EXISTS plugin_settings (key TEXT PRIMARY KEY, value TEXT)").run();
+            const rows: any = {};
+            for (const r of q("SELECT key, value FROM plugin_settings")) rows[r.key] = r.value;
+            return rows;
+        } catch { return {} as any; }
+    }
     const curatorReport = (report: any) => ({
         compact: report.actions.filter((a: any) => a.kind === "compact").length,
         bonds_suggested: report.actions.find((a: any) => a.kind === "bond_pass")?.suggestions ?? 0,
@@ -90,5 +99,37 @@ export function createFeatureHandlers() {
             const r = x("UPDATE atoms SET domain=?, updated_at=unixepoch() WHERE id=?", new_domain, id);
             return { ok: (r as any).changes > 0 };
         },
-    };
+        db_stats: () => {
+            const settings = getSettings();
+            const byStatus: any = {};
+            for (const r of q("SELECT status k, COUNT(*) n FROM atoms GROUP BY status")) byStatus[r.k] = r.n;
+            let size = 0;
+            try { size = fs.statSync(dbPath).size; } catch {}
+            return { by_status: byStatus, db_path: dbPath, db_size_bytes: size, retention_days: settings.retention_days ?? 7, ingest_enabled: settings.ingest_enabled !== false };
+        },
+        set_retention: ({ retention_days }: any) => {
+            db.prepare("CREATE TABLE IF NOT EXISTS plugin_settings (key TEXT PRIMARY KEY, value TEXT)").run();
+            db.prepare("INSERT OR REPLACE INTO plugin_settings (key, value) VALUES ('retention_days', ?)").run(String(Number(retention_days)));
+            return { ok: true, retention_days: Number(retention_days), note: 'Applicato a nuovi atomi e alle pulizie automatiche.' };
+        },
+        db_cleanup: ({ max_age_days, dry_run }: any) => {
+            const settings = getSettings();
+            const maxAge = max_age_days ?? settings.retention_days ?? 7;
+            const expired = q("SELECT id FROM atoms WHERE type IN ('session_msg','session_digest') AND status='active' AND unixepoch() - created_at > ?", maxAge * 86400);
+            if (!dry_run) {
+                for (const r of expired) x("UPDATE atoms SET status='expired', updated_at=unixepoch() WHERE id=?", r.id);
+            }
+            return { purged: expired.length, max_age_days: maxAge, dry_run: !!dry_run };
+        },
+        db_purge: ({ confirm }: any) => {
+            if (!confirm) return { ok: false, reason: 'confirm=true richiesto per eliminare definitivamente' };
+            const victims = q("SELECT id FROM atoms WHERE status IN ('deleted','expired','merged')");
+            for (const r of victims) {
+                x("DELETE FROM bonds WHERE from_id=? OR to_id=?", r.id, r.id);
+                x("DELETE FROM atom_versions WHERE atom_id=?", r.id);
+                x("DELETE FROM atom_embeddings WHERE atom_id=?", r.id);
+                x("DELETE FROM atoms WHERE id=?", r.id);
+            }
+            return { ok: true, purged: victims.length };
+        },    };
 }

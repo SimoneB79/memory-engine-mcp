@@ -2,17 +2,35 @@
   "id": "memory-engine",
   "name": "Memory Engine",
   "description": "Native Memory Engine: 45 memory tools, session ingest/digest, curator and Control UI.",
-  "version": "4.1.0",
+  "version": "4.2.0",
   "configSchema": {
     "type": "object",
-    "additionalProperties": false,
-    "properties": {}
+    "properties": {
+      "ingest": {
+        "type": "object",
+        "description": "Session ingest (chat memory capture) controls.",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "default": true,
+            "description": "Capture OpenClaw chat contents into the memory database. Set false to opt out completely."
+          },
+          "retention_days": {
+            "type": "number",
+            "default": 7,
+            "description": "Days before session_msg/session_digest atoms expire automatically."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "additionalProperties": false
   },
   "activation": {
     "onStartup": true
   },
   "controlUi": {
-    "entry": "dist/control-ui/14e2bd207bb33b0189bdfc2712c6eee0f901d10bca0f92cb7773a4bd0f93e10b/index.js"
+    "entry": "dist/control-ui/557078f7f8e088dbae4fa8aa0070d8e4656b1faa9b6be463e4199f668ffd1cce/index.js"
   },
   "contracts": {
     "tools": [

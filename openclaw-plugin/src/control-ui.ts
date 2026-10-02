@@ -10,7 +10,7 @@ export default defineControlUiPlugin({
       id: "memory-engine",
       label: "Memory Engine",
       mount(container, context) {
-        const feature = createFeatureClient(contract, context.host);
+        const feature: any = createFeatureClient(contract, context.host);
         const root = document.createElement("div");
         root.style.cssText = "padding:16px;font-family:system-ui,sans-serif;max-width:1100px;";
         const h1 = document.createElement("h1");
@@ -42,6 +42,7 @@ export default defineControlUiPlugin({
         mkTab("curator", "Curator");
         mkTab("backup", "Backup");
         mkTab("questions", "Domande");
+        mkTab("database", "Database");
 
         const status = (m: string) => { const el = document.createElement("div"); el.textContent = m; el.style.opacity = "0.6"; return el; };
 
@@ -221,6 +222,76 @@ export default defineControlUiPlugin({
           } catch (e) { qsList.textContent = String(e); }
         };
 
+        // __ DATABASE TAB __
+        const dbp = pages["database"];
+        const dbGrid = document.createElement("div");
+        dbGrid.style.cssText = "display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;margin-bottom:16px;";
+        const dbCard = (label: string) => {
+          const d = document.createElement("div");
+          d.style.cssText = "background:rgba(127,127,127,0.1);border-radius:8px;padding:10px 14px;";
+          const l = document.createElement("div"); l.textContent = label; l.style.cssText = "font-size:11px;opacity:0.7;text-transform:uppercase;";
+          const v = document.createElement("div"); v.textContent = "…"; v.style.cssText = "font-size:20px;font-weight:600;"; v.dataset.dbstat = label;
+          d.append(l, v); return d;
+        };
+        dbGrid.append(dbCard("Attivi"), dbCard("Scaduti"), dbCard("Eliminati"), dbCard("Merged"), dbCard("DB MB"), dbCard("Retention"));
+        const dbRow = document.createElement("div");
+        dbRow.style.cssText = "display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;";
+        const ttlInput = document.createElement("input");
+        ttlInput.type = "number"; ttlInput.min = "1"; ttlInput.max = "365";
+        ttlInput.setAttribute("aria-label", "Retention giorni");
+        ttlInput.style.cssText = "width:80px;padding:8px;border-radius:6px;border:1px solid rgba(127,127,127,0.4);background:transparent;color:inherit;";
+        const ttlLabel = document.createElement("span"); ttlLabel.textContent = "giorni TTL"; ttlLabel.style.cssText = "font-size:13px;opacity:0.7;";
+        const ttlBtn = document.createElement("button"); ttlBtn.textContent = "Salva TTL"; ttlBtn.style.cssText = "padding:8px 14px;border-radius:6px;border:1px solid rgba(127,127,127,0.4);background:rgba(127,127,127,0.15);color:inherit;cursor:pointer;";
+        const cleanBtn = document.createElement("button"); cleanBtn.textContent = "Pulisci sessioni scadute"; cleanBtn.style.cssText = ttlBtn.style.cssText;
+        const purgeBtn = document.createElement("button"); purgeBtn.textContent = "Purga definitiva"; purgeBtn.style.cssText = ttlBtn.style.cssText + "border-color:rgba(200,80,80,0.6);";
+        const dbOut = document.createElement("span"); dbOut.style.cssText = "font-size:12px;opacity:0.8;";
+        dbRow.append(ttlInput, ttlLabel, ttlBtn, cleanBtn, purgeBtn, dbOut);
+        const dbPath = document.createElement("div");
+        dbPath.style.cssText = "font-size:11px;opacity:0.5;";
+        dbp.append(dbGrid, dbRow, dbPath);
+        const setDbStat = (label: string, value: any) => { const el = dbGrid.querySelector('[data-dbstat="' + label + '"]'); if (el) el.textContent = String(value); };
+        const loadDbStats = async () => {
+          try {
+            const st: any = await feature.invoke("db_stats", {});
+            setDbStat("Attivi", st.by_status?.active ?? 0);
+            setDbStat("Scaduti", st.by_status?.expired ?? 0);
+            setDbStat("Eliminati", st.by_status?.deleted ?? 0);
+            setDbStat("Merged", st.by_status?.merged ?? 0);
+            setDbStat("DB MB", ((st.db_size_bytes ?? 0) / 1048576).toFixed(1));
+            setDbStat("Retention", st.retention_days + "g");
+            ttlInput.value = String(st.retention_days);
+            dbPath.textContent = "DB: " + st.db_path;
+          } catch (e) { dbOut.textContent = String(e); }
+        };
+        ttlBtn.onclick = async () => {
+          const days = Number(ttlInput.value);
+          if (!days || days < 1) { dbOut.textContent = "TTL non valido"; return; }
+          try {
+            const r: any = await feature.invoke("set_retention", { retention_days: days });
+            dbOut.textContent = r.ok ? "TTL salvato: " + days + " giorni" : "KO";
+            await loadDbStats();
+          } catch (e) { dbOut.textContent = String(e); }
+        };
+        cleanBtn.onclick = async () => {
+          cleanBtn.disabled = true; dbOut.textContent = "Pulizia…";
+          try {
+            const r: any = await feature.invoke("db_cleanup", { dry_run: false });
+            dbOut.textContent = "Scaduti " + r.purged + " atomi sessione (" + r.max_age_days + "g)";
+            await loadDbStats(); await refreshOverview();
+          } catch (e) { dbOut.textContent = String(e); }
+          finally { cleanBtn.disabled = false; }
+        };
+        purgeBtn.onclick = async () => {
+          if (!confirm("Eliminare DEFINITIVAMENTE gli atomi con stato deleted/expired/merged? Azione irreversibile.")) return;
+          purgeBtn.disabled = true; dbOut.textContent = "Purga…";
+          try {
+            const r: any = await feature.invoke("db_purge", { confirm: true });
+            dbOut.textContent = r.ok ? "Eliminati definitivamente " + r.purged + " atomi" : "KO: " + r.reason;
+            await loadDbStats(); await refreshOverview();
+          } catch (e) { dbOut.textContent = String(e); }
+          finally { purgeBtn.disabled = false; }
+        };
+
         const refreshOverview = async () => {
           try {
             const st: any = await feature.invoke("status", {});
@@ -242,6 +313,7 @@ export default defineControlUiPlugin({
         refreshOverview();
         loadBackups();
         loadQuestions();
+        loadDbStats();
         // domini nel filtro
         feature.invoke("domains", {}).then((r: any) => {
           for (const d of r.domains || []) {
