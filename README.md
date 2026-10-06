@@ -174,7 +174,7 @@ python3 web_ui.py
 # docker-compose.yml
 services:
   memory-engine:
-    image: ghcr.io/simoneb79/memory-engine-mcp:2.0.0
+    image: ghcr.io/simoneb79/memory-engine-mcp:2.1.0
     ports:
       - "8085:8085"
     volumes:

@@ -259,19 +259,29 @@ class EmbeddingEngine:
         total = len(rows)
         created = 0
         errors = 0
+        skipped_missing = 0
+        failed: list = []
         for r in rows:
             atom = self.db.get_atom(r["id"])
             if not atom:
+                skipped_missing += 1
                 continue
-            emb = self.embed_atom(atom)
+            try:
+                emb = self.embed_atom(atom)
+            except Exception as ee:
+                emb = None
+                failed.append({"id": r["id"], "reason": f"exception: {str(ee)[:200]}"})
+                errors += 1
+                continue
             if emb:
                 self.store_embedding(r["id"], emb)
                 created += 1
             else:
                 errors += 1
+                failed.append({"id": r["id"], "reason": "embed returned None (ollama/model)"})
 
         self.invalidate_cache()
-        return {"total": total, "created": created, "errors": errors}
+        return {"total": total, "created": created, "errors": errors, "skipped_missing": skipped_missing, "failed_detail": failed[:50]}
 
     def reindex_batch(self, force: bool = False, batch_size: int = 50) -> dict:
         """Reindex atoms in batches, returns progress immediately."""
@@ -294,17 +304,27 @@ class EmbeddingEngine:
         batch = rows[:batch_size]
         created = 0
         errors = 0
+        skipped_missing = 0
+        failed: list = []
 
         for r in batch:
             atom = self.db.get_atom(r["id"])
             if not atom:
+                skipped_missing += 1
                 continue
-            emb = self.embed_atom(atom)
+            try:
+                emb = self.embed_atom(atom)
+            except Exception as ee:
+                emb = None
+                failed.append({"id": r["id"], "reason": f"exception: {str(ee)[:200]}"})
+                errors += 1
+                continue
             if emb:
                 self.store_embedding(r["id"], emb)
                 created += 1
             else:
                 errors += 1
+                failed.append({"id": r["id"], "reason": "embed returned None (ollama/model)"})
 
         remaining = total - len(batch)
         self.invalidate_cache()
@@ -313,6 +333,8 @@ class EmbeddingEngine:
             "batch_size": len(batch),
             "created": created,
             "errors": errors,
+            "skipped_missing": skipped_missing,
+            "failed_detail": failed[:50],
             "remaining": remaining,
             "done": remaining == 0,
         }

@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 # ─── Version ────────────────────────────────────────────────
 
-__version__ = "1.8.2"
+__version__ = "2.1.0"
 
 from db import DB
 from engine import Engine
@@ -138,6 +138,12 @@ _reindex_state = {
     "current_atom": None,
 }
 
+# Anti-livelock: atomi che falliscono l'embed ripetutamente vengono messi in
+# quarantena (max _REINDEX_MAX_ATTEMPTS tentativi) invece di bloccare il loop.
+# Chiave: atom_id -> {"attempts": int, "reason": str}
+_reindex_quarantine: dict = {}
+_REINDEX_MAX_ATTEMPTS = 3
+
 def _reindex_loop():
     """Background thread: index all atoms missing embeddings, then keep running for new ones."""
     batch_delay = config.get("ollama", {}).get("reindex_delay_sec", 0.1)
@@ -170,14 +176,30 @@ def _reindex_loop():
                 _reindex_state["finished_at"] = None
                 print(f"[reindex] Starting: {pending} atoms pending", file=sys.stderr)
             
-            # Process one atom
+            # Process one atom: scarta candidati in quarantena (anti-livelock)
             with db.conn() as c:
-                row = c.execute(
+                rows = c.execute(
                     """SELECT a.id FROM atoms a
                        LEFT JOIN atom_embeddings e ON a.id = e.atom_id
                        WHERE a.status = 'active' AND e.atom_id IS NULL
-                       LIMIT 1"""
-                ).fetchone()
+                       LIMIT 20"""
+                ).fetchall()
+            row = next((r for r in rows if r["id"] not in _reindex_quarantine), None)
+            
+            if not row:
+                # tutti i pending sono in quarantena (o non ce ne sono): il loop è a fine corsa
+                if pending == 0:
+                    _reindex_state["running"] = False
+                    _reindex_state["current_atom"] = None
+                    time.sleep(poll_interval)
+                    continue
+                _reindex_state["running"] = False
+                _reindex_state["finished_at"] = int(time.time())
+                _reindex_state["current_atom"] = None
+                qn = len(_reindex_quarantine)
+                print(f"[reindex] Done with quarantine: {_reindex_state['created']} created, {_reindex_state['errors']} errors, {qn} atoms quarantined", file=sys.stderr)
+                time.sleep(poll_interval)
+                continue
             
             if not row:
                 _reindex_state["running"] = False
@@ -189,15 +211,28 @@ def _reindex_loop():
             _reindex_state["current_atom"] = atom_id
             atom = db.get_atom(atom_id)
             
+            fail_reason = None
             if atom:
-                emb = embeddings.embed_atom(atom)
+                try:
+                    emb = embeddings.embed_atom(atom)
+                except Exception as ee:
+                    emb = None
+                    fail_reason = f"exception: {ee}"
                 if emb:
                     embeddings.store_embedding(atom_id, emb)
                     _reindex_state["created"] += 1
+                    _reindex_quarantine.pop(atom_id, None)
                 else:
                     _reindex_state["errors"] += 1
+                    q = _reindex_quarantine.setdefault(atom_id, {"attempts": 0, "reason": fail_reason or "embed returned None (ollama/model)"})
+                    q["attempts"] += 1
+                    if fail_reason:
+                        q["reason"] = fail_reason
+                    if q["attempts"] >= _REINDEX_MAX_ATTEMPTS:
+                        print(f"[reindex] quarantine: atom {atom_id} failed {q['attempts']} times ({q['reason']})", file=sys.stderr)
             else:
                 _reindex_state["errors"] += 1
+                _reindex_quarantine[atom_id] = {"attempts": _REINDEX_MAX_ATTEMPTS, "reason": "atom not found (deleted while indexing)"}
             
             _reindex_state["processed"] += 1
             
@@ -973,6 +1008,7 @@ def reindex_embeddings(force: bool = False) -> str:
         "total_atoms": total_atoms,
         "total_embeddings": total_emb,
         "missing": total_atoms - total_emb,
+        "quarantined": {k: v for k, v in _reindex_quarantine.items() if v["attempts"] >= _REINDEX_MAX_ATTEMPTS},
         "progress": {
             "processed": _reindex_state["processed"],
             "created": _reindex_state["created"],
