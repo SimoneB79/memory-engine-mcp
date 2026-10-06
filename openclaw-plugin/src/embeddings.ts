@@ -51,11 +51,15 @@ export async function semanticSearch(
     )
     .all() as any[];
   const scored: Array<{ id: string; title: string; domain: string; type: string; semantic_score: number }> = [];
+  let skippedCorrupt = 0;
   for (const r of rows) {
     if (domain && r.domain !== domain) continue;
-    const v = new Float32Array(r.embedding.buffer, r.embedding.byteOffset, r.embedding.byteLength / 4);
+    const buf = Buffer.isBuffer(r.embedding) ? r.embedding : Buffer.from(r.embedding?.buffer ?? r.embedding);
+    if (!buf || !buf.length || buf.length % 4 !== 0 || buf.length / 4 !== qv.length) { skippedCorrupt++; continue; } // riga anomala: dimensione incoerente, scartata e conteggiata
+    const v = new Float32Array(buf.buffer, buf.byteOffset, buf.length / 4);
     scored.push({ id: r.id, title: r.title, domain: r.domain, type: r.type, semantic_score: Math.round(cosine(qv, v) * 10000) / 10000 });
   }
+  (semanticSearch as any)._lastSkippedCorrupt = skippedCorrupt;
   scored.sort((a, b) => b.semantic_score - a.semantic_score);
   return scored.slice(0, limit);
 }

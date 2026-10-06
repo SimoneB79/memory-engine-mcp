@@ -7,7 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import { Engine, Row } from "./engine.js";
 import { buildSessionDigest } from "./digest.js";
 
-export const VERSION = "4.3.0";
+export const VERSION = "4.4.0";
 
 export function createTools(dbPath: string) {
   const db = new DatabaseSync(dbPath);
@@ -21,7 +21,7 @@ export function createTools(dbPath: string) {
 
   return {
     __db: db,
-    version: () => ({ version: VERSION, note: "Native Memory Engine plugin: 19 tools + session ingest/digest + curator." }),
+    version: () => ({ version: VERSION, note: "Native Memory Engine plugin: 45 tools + session ingest/digest + curator." }),
 
     recall: async (query: string, limit = 5, domain?: string, semantic = false) => {
       const base = engine.recall(query, limit, { domain: domain ?? undefined, semantic: false });

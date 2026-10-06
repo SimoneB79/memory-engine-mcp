@@ -36,13 +36,21 @@ export function buildSemanticDefs(db: DatabaseSync, curator: Curator): SemanticT
         const probe = await embed("probe");
         if (!probe) return { ok: false, reason: "ollama non raggiungibile (OLLAMA_HOST / ME_EMBED_MODEL)" };
         const rows = q("SELECT id, title, COALESCE(body_compact, body, '') body FROM atoms a WHERE a.status='active' AND a.type IN ('fact','decision','procedure','preference','project','note') AND NOT EXISTS (SELECT 1 FROM atom_embeddings e WHERE e.atom_id = a.id) LIMIT ?", a.max_atoms ?? 100);
-        let indexed = 0, failed = 0;
+        let indexed = 0;
+        const failed: Array<{ id: string; reason: string }> = [];
         for (const r of rows) {
-          const ok = await embedAtom(db, r.id, r.title + ". " + String(r.body || "").slice(0, 1500));
-          if (ok) indexed++; else failed++;
+          const text = r.title + ". " + String(r.body || "").slice(0, 1500);
+          try {
+            const ok = await embedAtom(db, r.id, text);
+            if (ok) indexed++;
+            else failed.push({ id: r.id, reason: "embed returned null (ollama/model)" });
+          } catch (err: any) {
+            failed.push({ id: r.id, reason: String(err?.message || err).slice(0, 200) });
+          }
         }
         const total = q1("SELECT COUNT(*) n FROM atom_embeddings").n;
-        return { ok: true, indexed, failed, scanned: rows.length, embeddings_total: total };
+        const pending = q1("SELECT COUNT(*) n FROM atoms a WHERE a.status='active' AND a.type IN ('fact','decision','procedure','preference','project','note') AND NOT EXISTS (SELECT 1 FROM atom_embeddings e WHERE e.atom_id = a.id)").n;
+        return { ok: true, indexed, failed: failed.length, failed_detail: failed.slice(0, 50), scanned: rows.length, still_pending: pending, embeddings_total: total };
       },
     },
     {
