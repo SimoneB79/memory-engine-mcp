@@ -6,6 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import { Type } from "typebox";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { Learning } from "./learning.js";
 
 const T = Type;
 
@@ -133,30 +134,31 @@ export function buildMaintenanceDefs(db: DatabaseSync, dbPath: string): MaintToo
         return { ok: true, atoms_imported: imported, domain };
       },
     },
-    // ── STEP 4: LEARNING ──────────────────────────────
+    // ── STEP 4: LEARNING (parità Python: 7 tipi + extras TS) ─────
     {
       name: "memory_learning_run",
-      description: "Run learning checks: stale facts, missing compacts, low-bond durables. Creates human_questions for items needing review.",
+      description: "Run learning checks (full Python parity): contradictions, weak atoms, merge candidates, decay critical, gaps (body vuoti), graph gaps (opt-in) + stale_fact/needs_link. Creates deduped human_questions; answers apply side effects.",
       parameters: T.Object({ dry_run: T.Optional(T.Boolean()) }),
       execute: (a: any) => {
+        const learning = new Learning(db, ((globalThis as any).__meLearningCfg ?? {}));
+        const created = a.dry_run ? [] : learning.runAllChecks();
         const now = Math.floor(Date.now() / 1000);
-        const questions: any[] = [];
-        // check 1: stale durable atoms (not accessed in 180 days)
+        const dupKey = (t: string, ids: string[]) => t + "|" + JSON.stringify([...ids].sort());
+        const existing = new Set(q("SELECT question_type, atom_ids FROM human_questions WHERE status IN ('pending','answered','dismissed')").map((r: any) => { let ids: string[]; try { ids = JSON.parse(r.atom_ids || "[]"); } catch { ids = [r.atom_ids]; } return dupKey(r.question_type, ids); }));
+        const extra: any[] = [];
         const stale = q("SELECT id, title FROM atoms WHERE status='active' AND type IN ('fact','decision','procedure') AND ? - accessed_at > ? LIMIT 5", now, 180 * 86400);
-        for (const s of stale) questions.push({ question_type: "stale_fact", atom_id: s.id, question: "Is '" + s.title.slice(0, 60) + "' still accurate and needed?" });
-        // check 2: isolated durable atoms
+        for (const s of stale) { const k = dupKey("stale_fact", [s.id]); if (!existing.has(k)) { existing.add(k); extra.push({ question_type: "stale_fact", atom_id: s.id, question: "Is '" + s.title.slice(0, 60) + "' still accurate and needed?" }); } }
         const isolated = q("SELECT a.id, a.title FROM atoms a LEFT JOIN bonds b ON b.from_id=a.id OR b.to_id=a.id WHERE a.status='active' AND a.type IN ('fact','decision','procedure') AND b.from_id IS NULL AND a.domain NOT LIKE 'session/%' AND a.domain NOT LIKE 'daily/%' ORDER BY a.weight DESC LIMIT 5");
-        for (const s of isolated) questions.push({ question_type: "needs_link", atom_id: s.id, question: "Should '" + s.title.slice(0, 60) + "' be linked to related atoms?" });
-        let created = 0;
+        for (const s of isolated) { const k = dupKey("needs_link", [s.id]); if (!existing.has(k)) { existing.add(k); extra.push({ question_type: "needs_link", atom_id: s.id, question: "Should '" + s.title.slice(0, 60) + "' be linked to related atoms?" }); } }
+        let extraCreated = 0;
         if (!a.dry_run) {
-          for (const qq of questions) {
+          for (const qq of extra) {
             const id = "q_" + qq.question_type + "_" + qq.atom_id.slice(0, 30) + "_" + now;
-            x("INSERT OR IGNORE INTO human_questions (id, atom_ids, question_type, question, status, created_at) VALUES (?,?,?,?,?,?)",
-              id, JSON.stringify([qq.atom_id]), qq.question_type, qq.question, "pending", now);
-            created++;
+            x("INSERT OR IGNORE INTO human_questions (id, atom_ids, question_type, question, status, created_at) VALUES (?,?,?,?,?,?)", id, JSON.stringify([qq.atom_id]), qq.question_type, qq.question, "pending", now);
+            extraCreated++;
           }
         }
-        return { dry_run: !!a.dry_run, questions_created: created, questions: questions.slice(0, 10) };
+        return { dry_run: !!a.dry_run, questions_created: created.length + extraCreated, by_type: { python_parity: created.length, extras: extraCreated }, questions: [...created, ...extra].slice(0, 15) };
       },
     },
     {
@@ -173,9 +175,12 @@ export function buildMaintenanceDefs(db: DatabaseSync, dbPath: string): MaintToo
         const row = q1("SELECT * FROM human_questions WHERE id=? AND status='pending'", a.question_id);
         if (!row) return { ok: false, reason: "question not found or not pending" };
         x("UPDATE human_questions SET status='answered', answer=?, answered_at=unixepoch() WHERE id=?", a.answer, a.question_id);
+        // side-effects per tipo (parità Python learning.process_answer)
+        let effects: string[] = [];
+        try { effects = new Learning(db).applyAnswerSideEffects(row, a.answer); } catch (err: any) { effects = ["side-effect error: " + String(err?.message || err).slice(0, 120)]; }
         if (a.action === "archive_atom" && JSON.parse(row.atom_ids || "[]")[0]) x("UPDATE atoms SET status='archived', updated_at=unixepoch() WHERE id=?", JSON.parse(row.atom_ids || "[]")[0]);
         if (a.action === "delete_atom" && JSON.parse(row.atom_ids || "[]")[0]) x("UPDATE atoms SET status='deleted', updated_at=unixepoch() WHERE id=?", JSON.parse(row.atom_ids || "[]")[0]);
-        return { ok: true, question_id: a.question_id, answer: a.answer, action: a.action || "resolve_only" };
+        return { ok: true, question_id: a.question_id, answer: a.answer, action: a.action || "resolve_only", side_effects: effects };
       },
     },
   ];
