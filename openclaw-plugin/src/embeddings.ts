@@ -35,6 +35,23 @@ function cosine(a: Float32Array, b: Float32Array): number {
   return dot / (Math.sqrt(na) * Math.sqrt(nb));
 }
 
+// cache vettori Float32Array per atom_id (evita riconversione buffer a ogni query)
+const _vecCache = new Map<string, Float32Array>();
+const VEC_CACHE_MAX = 20000;
+
+function _cachedVec(id: string, buf: Buffer): Float32Array | null {
+  if (!buf || !buf.length || buf.length % 4 !== 0) return null;
+  const hit = _vecCache.get(id);
+  if (hit && hit.byteLength === buf.length) return hit;
+  if (_vecCache.size >= VEC_CACHE_MAX) _vecCache.clear();
+  const v = new Float32Array(buf.buffer, buf.byteOffset, buf.length / 4);
+  _vecCache.set(id, v);
+  return v;
+}
+
+// penalita' di dominio allineate all'engine FTS (session/daily inquinano la semantica)
+const DOMAIN_PENALTY: Array<[string, number]> = [["session/", -0.05], ["daily/", -0.05]];
+
 export async function semanticSearch(
   db: DatabaseSync,
   query: string,
@@ -55,13 +72,20 @@ export async function semanticSearch(
   for (const r of rows) {
     if (domain && r.domain !== domain) continue;
     const buf = Buffer.isBuffer(r.embedding) ? r.embedding : Buffer.from(r.embedding?.buffer ?? r.embedding);
-    if (!buf || !buf.length || buf.length % 4 !== 0 || buf.length / 4 !== qv.length) { skippedCorrupt++; continue; } // riga anomala: dimensione incoerente, scartata e conteggiata
-    const v = new Float32Array(buf.buffer, buf.byteOffset, buf.length / 4);
-    scored.push({ id: r.id, title: r.title, domain: r.domain, type: r.type, semantic_score: Math.round(cosine(qv, v) * 10000) / 10000 });
+    const v = _cachedVec(r.id, buf);
+    if (!v || v.length !== qv.length) { skippedCorrupt++; continue; } // riga anomala: dimensione incoerente, scartata e conteggiata
+    let score = cosine(qv, v);
+    for (const [pfx, pen] of DOMAIN_PENALTY) { if (String(r.domain || "").startsWith(pfx)) { score += pen; break; } }
+    scored.push({ id: r.id, title: r.title, domain: r.domain, type: r.type, semantic_score: Math.round(score * 10000) / 10000 });
   }
   (semanticSearch as any)._lastSkippedCorrupt = skippedCorrupt;
   scored.sort((a, b) => b.semantic_score - a.semantic_score);
-  return scored.slice(0, limit);
+  // cutoff relativo: i punteggi nomic sono compressi (0.5-0.75); un top-N fisso mescola
+  // risultati rilevanti e rumore distanti pochi centesimi. Teniamo solo cio' che sta
+  // vicino al migliore, come fa un occhio umano a scartare i risultati "di riempimento".
+  const top = scored[0]?.semantic_score ?? 0;
+  const kept = scored.filter((s) => s.semantic_score >= top - 0.05);
+  return kept.slice(0, limit);
 }
 
 export async function embedAtom(db: DatabaseSync, atomId: string, text: string): Promise<boolean> {

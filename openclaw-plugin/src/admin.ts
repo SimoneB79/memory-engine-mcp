@@ -3,6 +3,7 @@
  * Pure SQL + logic port from the Python MCP server; no Python residue.
  */
 import { DatabaseSync } from "node:sqlite";
+import { embed } from "./embeddings.js";
 import { Type } from "typebox";
 const T = Type;
 import { Row } from "./engine.js";
@@ -135,11 +136,30 @@ export function buildAdminDefs(db: DatabaseSync): AdminToolDef[] {
     },
     {
       name: "memory_find_similar",
-      description: "Find atoms similar to a reference atom. Uses embeddings when available, FTS title/body overlap otherwise.",
+      description: "Find atoms similar to a reference atom. Semantic via embeddings (cosine) with FTS fallback.",
       parameters: T.Object({ atom_id: T.String(), limit: T.Optional(T.Number()) }),
-      execute: (a: any) => {
-        const ref = q1("SELECT * FROM atoms WHERE id=?", a.atom_id);
+      execute: async (a: any) => {
+        const ref = q1("SELECT id, title, COALESCE(body_compact, body, '') body, domain FROM atoms WHERE id=?", a.atom_id);
         if (!ref) return { error: "atom not found" };
+        // 1) semantica: embedding del riferimento + coseno su atom_embeddings (parita' Python find_similar_atoms)
+        const refEmb = await embed(String(ref.title) + ". " + String(ref.body || "").slice(0, 1500));
+        if (refEmb) {
+          const rows = db.prepare("SELECT e.atom_id id, e.embedding, a.title, a.status, a.domain FROM atom_embeddings e JOIN atoms a ON a.id = e.atom_id WHERE a.status='active' AND e.atom_id != ?").all(ref.id) as any[];
+          const scored: any[] = [];
+          let skippedCorrupt = 0;
+          for (const r of rows) {
+            const buf = Buffer.isBuffer(r.embedding) ? r.embedding : Buffer.from(r.embedding?.buffer ?? r.embedding);
+            if (!buf || !buf.length || buf.length % 4 !== 0 || buf.length / 4 !== refEmb.length) { skippedCorrupt++; continue; }
+            const v = new Float32Array(buf.buffer, buf.byteOffset, buf.length / 4);
+            let dot = 0, na = 0, nb = 0;
+            for (let i = 0; i < v.length; i++) { dot += refEmb[i] * v[i]; na += refEmb[i] * refEmb[i]; nb += v[i] * v[i]; }
+            const cos = na && nb ? dot / (Math.sqrt(na) * Math.sqrt(nb)) : 0;
+            if (cos > 0.55) scored.push({ id: r.id, title: r.title, domain: r.domain, score: Math.round(cos * 10000) / 10000 });
+          }
+          scored.sort((p2, c) => c.score - p2.score);
+          if (scored.length) return { reference: ref.id, mode: "semantic", skipped_corrupt: skippedCorrupt, similar: scored.slice(0, a.limit ?? 5) };
+        }
+        // 2) fallback FTS (ollama down o nessun embedding sopra soglia)
         const words = String(ref.title || "").toLowerCase().split(/[^a-z0-9_]+/).filter((w: string) => w.length > 3);
         const out: any[] = [];
         const seen = new Set([ref.id]);
@@ -148,7 +168,7 @@ export function buildAdminDefs(db: DatabaseSync): AdminToolDef[] {
           try { hits = db.prepare("SELECT a.id, a.title, bm25(atoms_fts) score FROM atoms_fts JOIN atoms a ON atoms_fts.rowid=a.rowid WHERE atoms_fts MATCH ? AND a.status='active' LIMIT 20").all('"' + w + '"'); } catch { hits = []; }
           for (const h of hits) { if (seen.has(h.id)) continue; seen.add(h.id); out.push({ id: h.id, title: h.title, score: h.score }); }
         }
-        return { reference: ref.id, mode: "fts (semantic embeddings: step 2)", similar: out.slice(0, a.limit ?? 5) };
+        return { reference: ref.id, mode: refEmb ? "fts (no embeddings above threshold)" : "fts-fallback (ollama non raggiungibile)", similar: out.slice(0, a.limit ?? 5) };
       },
     },
     {

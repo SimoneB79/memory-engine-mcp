@@ -7,7 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import { Engine, Row } from "./engine.js";
 import { buildSessionDigest } from "./digest.js";
 
-export const VERSION = "4.5.0";
+export const VERSION = "4.5.1";
 
 export function createTools(dbPath: string) {
   const db = new DatabaseSync(dbPath);
@@ -40,6 +40,11 @@ export function createTools(dbPath: string) {
       if (results.length) return results;
       // fallback FTS se ollama non raggiungibile
       return engine.searchFts(query, limit, ["active"]).map((r) => ({ id: r.id, title: r.title, semantic_score: null, note: "fts-fallback (ollama non raggiungibile)" }));
+    },
+
+    recall_session: async (session_id: string, query: string, limit: number = 10) => {
+      // parità Python recall_session: recall limitato al dominio della sessione
+      return engine.recall(query, limit, { domain: "session/" + session_id, semantic: false });
     },
 
     remember: (title: string, content: string, type = "fact", domain = "general", confidence = 0.8, tags: string[] = []) => {
@@ -228,6 +233,6 @@ export function createTools(dbPath: string) {
     },
 
     // ── Admin jobs: puntano al server Python ──
-    _admin_note: () => "curator_run, learning_run, decay_run, backup/restore, import/export, cleanup_*, reindex_embeddings, find_similar, suggest_bonds: disponibili sul server MCP Python.",
+    _admin_note: () => "curator_run, learning_run, decay_run, backup/restore, import/export, cleanup_*, reindex_embeddings, find_similar, suggest_bonds: tutti disponibili come tool nativi memory_* (parità completa dal 4.5.x).",
   };
 }
