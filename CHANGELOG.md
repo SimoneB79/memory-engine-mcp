@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.5.3] — 2026-10-09
+
+### Fixed (openclaw-plugin)
+- **Doctor upgrade handshake**: il plugin non dichiarava alcun doctor contract, quindi `openclaw doctor` lasciava per sempre pending la migrazione dati/settings di `memory-engine/index` e `memory-engine/ui-feature` (warning "data/settings upgrade is unfinished"). Aggiunto `src/doctor-contract-api.ts` con `stateMigrations: []` e dichiarazione `doctorContract.stateMigrations: []` nel manifest: il Doctor ora ispeziona il plugin come stateless (lo stato vive nel proprio DB SQLite) e chiude l'handshake.
+
 ## [4.5.2] — 2026-10-09
 
 ### Fixed (openclaw-plugin)

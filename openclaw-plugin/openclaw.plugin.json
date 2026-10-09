@@ -2,29 +2,11 @@
   "id": "memory-engine",
   "name": "Memory Engine",
   "description": "Native Memory Engine: 45 memory tools, session ingest/digest, curator and Control UI.",
-  "version": "4.5.2",
+  "version": "4.5.3",
   "configSchema": {
     "type": "object",
-    "properties": {
-      "ingest": {
-        "type": "object",
-        "description": "Session ingest (chat memory capture) controls.",
-        "properties": {
-          "enabled": {
-            "type": "boolean",
-            "default": false,
-            "description": "Capture OpenClaw chat contents into the memory database. Default false (privacy-first); set true to enable session ingest."
-          },
-          "retention_days": {
-            "type": "number",
-            "default": 7,
-            "description": "Days before session_msg/session_digest atoms expire automatically."
-          }
-        },
-        "additionalProperties": false
-      }
-    },
-    "additionalProperties": false
+    "additionalProperties": false,
+    "properties": {}
   },
   "activation": {
     "onStartup": true
@@ -32,54 +14,10 @@
   "controlUi": {
     "entry": "dist/control-ui/557078f7f8e088dbae4fa8aa0070d8e4656b1faa9b6be463e4199f668ffd1cce/index.js"
   },
+  "doctorContract": {
+    "stateMigrations": []
+  },
   "contracts": {
-    "tools": [
-      "memory_version",
-      "memory_recall",
-      "memory_remember",
-      "memory_working_set",
-      "memory_get_atom",
-      "memory_list_atoms",
-      "memory_link",
-      "memory_search_graph",
-      "memory_contradict",
-      "memory_impact",
-      "memory_preference_search",
-      "memory_error_check",
-      "memory_error_log",
-      "memory_stats",
-      "memory_session_summary",
-      "memory_generate_session_digest",
-      "memory_admin",
-      "memory_curator_run",
-      "memory_cognitive_status",
-      "memory_summary",
-      "memory_delete_atom",
-      "memory_unlink",
-      "memory_error_list",
-      "memory_list_contradictions",
-      "memory_decay_run",
-      "memory_update_domain",
-      "memory_classify_memory_tier",
-      "memory_cleanup_sessions",
-      "memory_find_similar",
-      "memory_merge_atoms",
-      "memory_cleanup_duplicates",
-      "memory_semantic_search",
-      "memory_reindex_embeddings",
-      "memory_suggest_bonds",
-      "memory_suggest_bonds_all",
-      "memory_backup_database",
-      "memory_restore_database",
-      "memory_list_backups",
-      "memory_export_all",
-      "memory_export_atom",
-      "memory_import_data",
-      "memory_import_markdown",
-      "memory_learning_run",
-      "memory_ask_pending",
-      "memory_answer_human",
-      "memory_recall_session"
-    ]
+    "tools": []
   }
 }
