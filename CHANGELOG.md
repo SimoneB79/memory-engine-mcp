@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.5.4] — 2026-10-09
+
+### Fixed (openclaw-plugin)
+- **4.5.3 broken**: la build aveva azzerato il `configSchema` del manifest (bug noto plugins build), quindi il gateway rifiutava la config con `plugins.entries.memory-engine.config.ingest` ("must not have additional properties: ingest") e l'update falliva. 4.5.4 ripristina il configSchema ingest (enabled/retention_days). Il fix doctor-contract di 4.5.3 è invariato.
+
 ## [4.5.3] — 2026-10-09
 
 ### Fixed (openclaw-plugin)
