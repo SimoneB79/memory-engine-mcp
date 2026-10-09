@@ -1,0 +1,47 @@
+import * as z from "zod/v4";
+import { Result as SafeParseResult } from "../../types/fp.js";
+import { SDKValidationError } from "../errors/sdkvalidationerror.js";
+import { AuthenticationConfiguration } from "./authenticationconfiguration.js";
+import { ConnectionPreference } from "./connectionpreference.js";
+import { ConnectorLocale } from "./connectorlocale.js";
+import { ConnectorTool } from "./connectortool.js";
+import { ConsumerType } from "./consumertype.js";
+import { MCPServerCard } from "./mcpservercard.js";
+import { PublicAuthenticationMethod } from "./publicauthenticationmethod.js";
+import { PublicConnectionConfig } from "./publicconnectionconfig.js";
+import { PublicExecutionEnv } from "./publicexecutionenv.js";
+import { ResourceVisibility } from "./resourcevisibility.js";
+export type HTTPConnector = {
+    id: string;
+    name: string;
+    title?: string | null | undefined;
+    description: string;
+    createdAt: Date;
+    modifiedAt: Date;
+    server?: string | null | undefined;
+    iconUrl?: string | null | undefined;
+    serverCard?: MCPServerCard | null | undefined;
+    ownerId?: string | null | undefined;
+    ownerType: ConsumerType;
+    visibility: ResourceVisibility;
+    creatorId?: string | null | undefined;
+    locale?: ConnectorLocale | null | undefined;
+    systemPrompt?: string | null | undefined;
+    supportedAuthMethods?: Array<PublicAuthenticationMethod> | null | undefined;
+    connectionPreferences?: Array<ConnectionPreference> | null | undefined;
+    connectionCredentials?: Array<AuthenticationConfiguration> | null | undefined;
+    active?: boolean | null | undefined;
+    blockedBy?: Array<ConsumerType> | undefined;
+    privateToolExecution: boolean;
+    mistral: boolean;
+    isAuthenticated?: boolean | null | undefined;
+    tools?: Array<ConnectorTool> | null | undefined;
+    systemPromptRoute?: string | null | undefined;
+    connectionConfig?: PublicConnectionConfig | null | undefined;
+    executionEnv?: PublicExecutionEnv | null | undefined;
+    protocol: "http";
+};
+/** @internal */
+export declare const HTTPConnector$inboundSchema: z.ZodType<HTTPConnector, unknown>;
+export declare function httpConnectorFromJSON(jsonString: string): SafeParseResult<HTTPConnector, SDKValidationError>;
+//# sourceMappingURL=httpconnector.d.ts.map

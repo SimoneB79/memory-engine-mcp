@@ -1,0 +1,771 @@
+import {
+  trace,
+  type Span,
+  type Tracer,
+  type TracerOptions,
+  type TracerProvider,
+} from "@opentelemetry/api";
+
+import { Mistral } from "../../../src/index.js";
+import {
+  getTelemetryTracer,
+  RedactingSpanExporter,
+  registerTracerProvider,
+  RegexRedactionPolicy,
+} from "../../../src/extra/observability/index.js";
+import {
+  configureTelemetry,
+  configureTelemetryForHook,
+  flushTelemetry,
+  MISTRAL_OTLP_TRACES_ENDPOINT_ENV,
+  MISTRAL_SDK_TELEMETRY_ENV,
+  MISTRAL_TELEMETRY_ENDPOINT,
+  setTracerProvider,
+  shutdownTelemetry,
+  TelemetryConfigurationError,
+  _createTelemetryTracerProvider,
+} from "../../../src/extra/observability/telemetry.js";
+import { TracingHook } from "../../../src/hooks/tracing.js";
+import type { HookContext } from "../../../src/hooks/types.js";
+
+type FakeProvider = TracerProvider & {
+  forceFlushCalled: number;
+  shutdownCalled: boolean;
+  forceFlush: () => void | Promise<void>;
+  shutdown: () => void;
+};
+
+type NamedTracer = Tracer & { label: string };
+
+function createSpan(): Span {
+  const span = {
+    spanContext: () => ({ traceId: "", spanId: "", traceFlags: 0 }),
+    setAttribute: () => span,
+    setAttributes: () => span,
+    addEvent: () => span,
+    addLink: () => span,
+    addLinks: () => span,
+    setStatus: () => span,
+    updateName: () => span,
+    end: () => undefined,
+    isRecording: () => false,
+    recordException: () => undefined,
+  } as Span;
+  return span;
+}
+
+function createProvider(): FakeProvider {
+  const provider = {
+    forceFlushCalled: 0,
+    shutdownCalled: false,
+    getTracer: () => ({
+      startSpan: () => createSpan(),
+      startActiveSpan: () => undefined as never,
+    }),
+    forceFlush() {
+      provider.forceFlushCalled += 1;
+    },
+    shutdown() {
+      provider.shutdownCalled = true;
+    },
+  } as FakeProvider;
+  return provider;
+}
+
+function createBatchingProvider(): FakeProvider & { exportedSpans: string[] } {
+  const pendingSpans: string[] = [];
+  const exportedSpans: string[] = [];
+  const tracer = {
+    startSpan(name: string) {
+      const span = createSpan();
+      let ended = false;
+      span.end = () => {
+        if (!ended) {
+          pendingSpans.push(name);
+          ended = true;
+        }
+      };
+      return span;
+    },
+    startActiveSpan: () => undefined as never,
+  } as Tracer;
+
+  const provider = {
+    forceFlushCalled: 0,
+    shutdownCalled: false,
+    exportedSpans,
+    getTracer: () => tracer,
+    forceFlush() {
+      provider.forceFlushCalled += 1;
+      exportedSpans.push(...pendingSpans.splice(0));
+    },
+    shutdown() {
+      provider.shutdownCalled = true;
+    },
+  } as FakeProvider & { exportedSpans: string[] };
+  return provider;
+}
+
+function createNamedTracer(label: string): NamedTracer {
+  return {
+    label,
+    startSpan: () => createSpan(),
+    startActiveSpan: () => undefined as never,
+  } as NamedTracer;
+}
+
+function createNamedProvider(tracer: Tracer): TracerProvider {
+  return {
+    getTracer: vi.fn((
+      _name: string,
+      _version?: string,
+      _options?: TracerOptions,
+    ) => tracer),
+  } as TracerProvider;
+}
+
+function expectTracerLabel(tracer: Tracer, label: string): void {
+  expect((tracer as NamedTracer).label).toBe(label);
+}
+
+function createTelemetryModuleLoader(exporterInstances: Array<{ config: unknown }>) {
+  return vi.fn(async (specifier: string) => {
+    if (specifier === "@opentelemetry/sdk-trace-base") {
+      return {
+        BasicTracerProvider: class {
+          spanProcessors: unknown[] = [];
+
+          constructor(public config: unknown) {}
+
+          addSpanProcessor(processor: unknown) {
+            this.spanProcessors.push(processor);
+          }
+
+          getTracer = vi.fn();
+          shutdown = vi.fn();
+        },
+        BatchSpanProcessor: class {
+          constructor(public exporter: unknown) {}
+        },
+      };
+    }
+    if (specifier === "@opentelemetry/exporter-trace-otlp-http") {
+      return {
+        OTLPTraceExporter: class {
+          constructor(public config: unknown) {
+            exporterInstances.push(this);
+          }
+        },
+      };
+    }
+    if (specifier === "@opentelemetry/resources") {
+      return {
+        resourceFromAttributes: (attributes: Record<string, string>) => ({ attributes }),
+      };
+    }
+    throw new Error(`Unexpected module ${specifier}`);
+  });
+}
+
+function createContext(
+  options: HookContext["options"] = { apiKey: "test-key" },
+): HookContext {
+  return {
+    operationID: "chat_completion_v1",
+    baseURL: "https://api.mistral.ai",
+    oAuth2Scopes: null,
+    retryConfig: { strategy: "none" },
+    resolvedSecurity: null,
+    options,
+  } as HookContext;
+}
+
+function createClient(apiKey: string | undefined = "test-key"): Mistral {
+  return new Mistral(apiKey === undefined ? {} : { apiKey });
+}
+
+function getTestTracingHook(client: Mistral): TracingHook {
+  return client._options.hooks!.beforeRequestHooks
+    .find((candidate: unknown) => candidate instanceof TracingHook) as TracingHook;
+}
+
+async function withEnv<T>(
+  env: Record<string, string | undefined>,
+  fn: () => T | Promise<T>,
+): Promise<T> {
+  const previous: Record<string, string | undefined> = {};
+  for (const key of Object.keys(env)) {
+    previous[key] = process.env[key];
+  }
+
+  try {
+    for (const [key, value] of Object.entries(env)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+    return await fn();
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  }
+}
+
+afterEach(() => {
+  registerTracerProvider(undefined);
+  vi.restoreAllMocks();
+});
+
+describe("configureTelemetryForHook", () => {
+  test("defaults to disabled when Mistral telemetry env is absent", async () => {
+    await withEnv({ [MISTRAL_SDK_TELEMETRY_ENV]: undefined }, async () => {
+      const hook = new TracingHook();
+      const createTelemetryTracerProvider = vi.fn(async () => createProvider());
+
+      const configured = await configureTelemetryForHook(hook, createContext(), {
+        createTelemetryTracerProvider,
+      });
+
+      expect(configured).toBe(false);
+      expect(createTelemetryTracerProvider).not.toHaveBeenCalled();
+      expect(hook.tracerProvider).toBeUndefined();
+      expect(hook._telemetryAutoDisabled).toBe(true);
+    });
+  });
+
+  test("MISTRAL_SDK_TELEMETRY=dedicated attaches an SDK-owned provider", async () => {
+    await withEnv({ [MISTRAL_SDK_TELEMETRY_ENV]: "dedicated" }, async () => {
+      const hook = new TracingHook();
+      const provider = createProvider();
+      const createTelemetryTracerProvider = vi.fn(async () => provider);
+
+      const configured = await configureTelemetryForHook(hook, createContext(), {
+        createTelemetryTracerProvider,
+      });
+
+      expect(configured).toBe(true);
+      expect(createTelemetryTracerProvider).toHaveBeenCalledWith({
+        apiKey: "test-key",
+        baseURL: "https://api.mistral.ai",
+      });
+      expect(hook.tracerProvider).toBe(provider);
+    });
+  });
+
+  test("MISTRAL_SDK_TELEMETRY=false disables telemetry", async () => {
+    await withEnv({ [MISTRAL_SDK_TELEMETRY_ENV]: "false" }, async () => {
+      const hook = new TracingHook();
+      const createTelemetryTracerProvider = vi.fn(async () => createProvider());
+
+      const configured = await configureTelemetryForHook(hook, createContext(), {
+        createTelemetryTracerProvider,
+      });
+
+      expect(configured).toBe(false);
+      expect(createTelemetryTracerProvider).not.toHaveBeenCalled();
+      expect(hook.tracerProvider).toBeUndefined();
+    });
+  });
+
+  test("MISTRAL_SDK_TELEMETRY=global uses global provider mode", async () => {
+    await withEnv({ [MISTRAL_SDK_TELEMETRY_ENV]: "global" }, async () => {
+      const hook = new TracingHook();
+      const createTelemetryTracerProvider = vi.fn(async () => createProvider());
+
+      const configured = await configureTelemetryForHook(hook, createContext(), {
+        createTelemetryTracerProvider,
+      });
+
+      expect(configured).toBe(true);
+      expect(createTelemetryTracerProvider).not.toHaveBeenCalled();
+      expect(hook.tracerProvider).toBeUndefined();
+      expect(hook._telemetryUseGlobalProvider).toBe(true);
+    });
+  });
+
+  test("MISTRAL_SDK_TELEMETRY=dedicated creates an SDK-owned provider even when a global provider exists", async () => {
+    await withEnv({ [MISTRAL_SDK_TELEMETRY_ENV]: "dedicated" }, async () => {
+      const globalProviderSpy = vi
+        .spyOn(trace, "getTracerProvider")
+        .mockReturnValue(createProvider());
+      const hook = new TracingHook();
+      const provider = createProvider();
+      const createTelemetryTracerProvider = vi.fn(async () => provider);
+
+      try {
+        const configured = await configureTelemetryForHook(hook, createContext(), {
+          createTelemetryTracerProvider,
+        });
+
+        expect(configured).toBe(true);
+        expect(globalProviderSpy).not.toHaveBeenCalled();
+        expect(createTelemetryTracerProvider).toHaveBeenCalledTimes(1);
+        expect(hook.tracerProvider).toBe(provider);
+        expect(hook._telemetryUseGlobalProvider).toBe(false);
+      } finally {
+        globalProviderSpy.mockRestore();
+      }
+    });
+  });
+
+  test("shares in-flight SDK-owned provider initialization", async () => {
+    await withEnv({ [MISTRAL_SDK_TELEMETRY_ENV]: "dedicated" }, async () => {
+      const hook = new TracingHook();
+      const provider = createProvider();
+      let resolveProvider!: () => void;
+      const providerReady = new Promise<void>((resolve) => {
+        resolveProvider = resolve;
+      });
+      const createTelemetryTracerProvider = vi.fn(async () => {
+        await providerReady;
+        return provider;
+      });
+
+      const first = configureTelemetryForHook(hook, createContext(), {
+        createTelemetryTracerProvider,
+      });
+      const second = configureTelemetryForHook(hook, createContext(), {
+        createTelemetryTracerProvider,
+      });
+
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(createTelemetryTracerProvider).toHaveBeenCalledTimes(1);
+
+      resolveProvider();
+
+      await expect(Promise.all([first, second])).resolves.toEqual([true, true]);
+      expect(createTelemetryTracerProvider).toHaveBeenCalledTimes(1);
+      expect(hook.tracerProvider).toBe(provider);
+      expect(hook._telemetryInitialization).toBeUndefined();
+      expect(provider.shutdownCalled).toBe(false);
+    });
+  });
+
+  test("invalid Mistral telemetry env raises a configuration error", async () => {
+    await withEnv({ [MISTRAL_SDK_TELEMETRY_ENV]: "true" }, async () => {
+      const hook = new TracingHook();
+
+      await expect(configureTelemetryForHook(hook, createContext())).rejects.toThrow(
+        TelemetryConfigurationError,
+      );
+    });
+  });
+});
+
+describe("configureTelemetry", () => {
+  test("explicit global mode clears auto provider", async () => {
+    const client = createClient();
+    const hook = getTestTracingHook(client);
+    const provider = createProvider();
+    hook.tracerProvider = provider;
+    hook._autoTelemetryProvider = provider;
+
+    const configured = await configureTelemetry(client, "global");
+
+    expect(configured).toBe(true);
+    expect(provider.shutdownCalled).toBe(true);
+    expect(hook.tracerProvider).toBeUndefined();
+    expect(hook._telemetryUseGlobalProvider).toBe(true);
+  });
+
+  test("custom provider replaces auto provider without shutting down the custom provider", async () => {
+    const client = createClient();
+    const hook = getTestTracingHook(client);
+    const autoProvider = createProvider();
+    const customProvider = createProvider();
+    hook.tracerProvider = autoProvider;
+    hook._autoTelemetryProvider = autoProvider;
+
+    const configured = await configureTelemetry(client, customProvider);
+
+    expect(configured).toBe(true);
+    expect(autoProvider.shutdownCalled).toBe(true);
+    expect(customProvider.shutdownCalled).toBe(false);
+    expect(hook.tracerProvider).toBe(customProvider);
+  });
+
+  test("setTracerProvider is a compatibility wrapper", async () => {
+    const client = createClient();
+    const hook = getTestTracingHook(client);
+    const provider = createProvider();
+
+    await setTracerProvider(client, provider);
+
+    expect(hook.tracerProvider).toBe(provider);
+  });
+
+});
+
+describe("shutdownTelemetry", () => {
+  test("flushes and shuts down the SDK-owned dedicated provider", async () => {
+    const client = createClient();
+    const hook = getTestTracingHook(client);
+    const provider = createProvider();
+    hook.tracerProvider = provider;
+    hook._autoTelemetryProvider = provider;
+
+    await shutdownTelemetry(client);
+
+    expect(provider.shutdownCalled).toBe(true);
+    expect(hook._autoTelemetryProvider).toBeUndefined();
+    expect(hook.tracerProvider).toBeUndefined();
+  });
+
+  test("does not shut down an application-owned custom provider", async () => {
+    const client = createClient();
+    const hook = getTestTracingHook(client);
+    const customProvider = createProvider();
+    hook.tracerProvider = customProvider;
+
+    await shutdownTelemetry(client);
+
+    expect(customProvider.shutdownCalled).toBe(false);
+    expect(hook.tracerProvider).toBe(customProvider);
+  });
+
+  test("is a no-op when no provider is configured", async () => {
+    const client = createClient();
+
+    await expect(shutdownTelemetry(client)).resolves.toBeUndefined();
+  });
+});
+
+describe("flushTelemetry", () => {
+  test("flushes the SDK-owned provider without shutting it down or detaching it", async () => {
+    const client = createClient();
+    const hook = getTestTracingHook(client);
+    const provider = createProvider();
+    hook.tracerProvider = provider;
+    hook._autoTelemetryProvider = provider;
+
+    await flushTelemetry(client);
+
+    expect(provider.forceFlushCalled).toBe(1);
+    expect(provider.shutdownCalled).toBe(false);
+    expect(hook._autoTelemetryProvider).toBe(provider);
+    expect(hook.tracerProvider).toBe(provider);
+  });
+
+  test("exports spans created after an earlier flush", async () => {
+    const client = createClient();
+    const hook = getTestTracingHook(client);
+    const provider = createBatchingProvider();
+    hook.tracerProvider = provider;
+    hook._autoTelemetryProvider = provider;
+    const tracer = getTelemetryTracer(client, "flush-test");
+
+    tracer.startSpan("first").end();
+    await flushTelemetry(client);
+    expect(provider.exportedSpans).toEqual(["first"]);
+
+    tracer.startSpan("second").end();
+    await flushTelemetry(client);
+
+    expect(provider.exportedSpans).toEqual(["first", "second"]);
+    expect(provider.forceFlushCalled).toBe(2);
+    expect(provider.shutdownCalled).toBe(false);
+  });
+
+  test("does not flush an application-owned custom provider", async () => {
+    const client = createClient();
+    const hook = getTestTracingHook(client);
+    const customProvider = createProvider();
+    hook.tracerProvider = customProvider;
+
+    await flushTelemetry(client);
+
+    expect(customProvider.forceFlushCalled).toBe(0);
+    expect(customProvider.shutdownCalled).toBe(false);
+    expect(hook.tracerProvider).toBe(customProvider);
+  });
+
+  test("is a no-op when no provider is configured", async () => {
+    const client = createClient();
+
+    await expect(flushTelemetry(client)).resolves.toBeUndefined();
+  });
+
+  test("propagates forceFlush rejections without detaching the provider", async () => {
+    const client = createClient();
+    const hook = getTestTracingHook(client);
+    const provider = createProvider();
+    const failure = new Error("export failed");
+    provider.forceFlush = async () => {
+      throw failure;
+    };
+    hook.tracerProvider = provider;
+    hook._autoTelemetryProvider = provider;
+
+    await expect(flushTelemetry(client)).rejects.toBe(failure);
+
+    expect(provider.shutdownCalled).toBe(false);
+    expect(hook._autoTelemetryProvider).toBe(provider);
+    expect(hook.tracerProvider).toBe(provider);
+  });
+});
+
+describe("getTelemetryTracer", () => {
+  test("uses the provider configured on the client", async () => {
+    const client = createClient();
+    const clientTracer = createNamedTracer("client");
+    const registeredTracer = createNamedTracer("registered");
+    const provider = createNamedProvider(clientTracer);
+    const registeredProvider = createNamedProvider(registeredTracer);
+    const globalProviderSpy = vi.spyOn(trace, "getTracerProvider");
+    registerTracerProvider(registeredProvider);
+
+    await configureTelemetry(client, provider);
+
+    const tracer = getTelemetryTracer(client, "my-agent");
+
+    expectTracerLabel(tracer, "client");
+    expect(provider.getTracer).toHaveBeenCalledWith("my-agent", undefined, undefined);
+    expect(registeredProvider.getTracer).not.toHaveBeenCalled();
+    expect(globalProviderSpy).not.toHaveBeenCalled();
+  });
+
+  test("explicit global provider mode bypasses the registered provider", async () => {
+    const client = createClient();
+    const registeredTracer = createNamedTracer("registered");
+    const globalTracer = createNamedTracer("global");
+    const registeredProvider = createNamedProvider(registeredTracer);
+    const globalProvider = createNamedProvider(globalTracer);
+    registerTracerProvider(registeredProvider);
+    vi.spyOn(trace, "getTracerProvider").mockReturnValue(globalProvider);
+
+    await configureTelemetry(client, "global");
+
+    const tracer = getTelemetryTracer(client, "my-agent");
+
+    expectTracerLabel(tracer, "global");
+    expect(registeredProvider.getTracer).not.toHaveBeenCalled();
+    expect(globalProvider.getTracer).toHaveBeenCalledWith("my-agent", undefined, undefined);
+  });
+
+  test("env global mode bypasses the registered provider before configuration", async () => {
+    await withEnv({ [MISTRAL_SDK_TELEMETRY_ENV]: "global" }, async () => {
+      const client = createClient();
+      const registeredTracer = createNamedTracer("registered");
+      const globalTracer = createNamedTracer("global");
+      const registeredProvider = createNamedProvider(registeredTracer);
+      const globalProvider = createNamedProvider(globalTracer);
+      registerTracerProvider(registeredProvider);
+      vi.spyOn(trace, "getTracerProvider").mockReturnValue(globalProvider);
+
+      const tracer = getTelemetryTracer(client, "my-agent");
+
+      expectTracerLabel(tracer, "global");
+      expect(registeredProvider.getTracer).not.toHaveBeenCalled();
+      expect(globalProvider.getTracer).toHaveBeenCalledWith("my-agent", undefined, undefined);
+    });
+  });
+
+  test("falls back to the registered provider when no client provider is configured", () => {
+    const client = createClient();
+    const registeredTracer = createNamedTracer("registered");
+    const registeredProvider = createNamedProvider(registeredTracer);
+    const globalProviderSpy = vi.spyOn(trace, "getTracerProvider");
+    registerTracerProvider(registeredProvider);
+
+    const tracer = getTelemetryTracer(client, "my-agent");
+
+    expectTracerLabel(tracer, "registered");
+    expect(registeredProvider.getTracer).toHaveBeenCalledWith("my-agent", undefined, undefined);
+    expect(globalProviderSpy).not.toHaveBeenCalled();
+  });
+
+  test("falls back to the global provider when no client or registered provider is configured", () => {
+    const client = createClient();
+    const globalTracer = createNamedTracer("global");
+    const globalProvider = createNamedProvider(globalTracer);
+    vi.spyOn(trace, "getTracerProvider").mockReturnValue(globalProvider);
+
+    const tracer = getTelemetryTracer(client, "my-agent");
+
+    expectTracerLabel(tracer, "global");
+    expect(globalProvider.getTracer).toHaveBeenCalledWith("my-agent", undefined, undefined);
+  });
+
+  test("passes custom tracer name, version, and options to the selected provider", async () => {
+    const client = createClient();
+    const clientTracer = createNamedTracer("client");
+    const provider = createNamedProvider(clientTracer);
+    const options = { schemaUrl: "https://schema.test/v1" };
+
+    await configureTelemetry(client, provider);
+
+    const tracer = getTelemetryTracer(client, "my-agent", "1.2.3", options);
+
+    expectTracerLabel(tracer, "client");
+    expect(provider.getTracer).toHaveBeenCalledWith("my-agent", "1.2.3", options);
+  });
+});
+
+describe("_createTelemetryTracerProvider", () => {
+  test("uses the Mistral endpoint and bearer auth", async () => {
+    const exporterInstances: Array<{ config: unknown }> = [];
+    const moduleLoader = createTelemetryModuleLoader(exporterInstances);
+
+    await _createTelemetryTracerProvider({
+      apiKey: "test-key",
+      moduleLoader,
+    });
+
+    expect(exporterInstances).toHaveLength(1);
+    expect(exporterInstances[0]?.config).toEqual({
+      url: MISTRAL_TELEMETRY_ENDPOINT,
+      headers: { Authorization: "Bearer test-key" },
+    });
+  });
+
+  test("uses the configured base URL with the telemetry traces path", async () => {
+    const exporterInstances: Array<{ config: unknown }> = [];
+    const moduleLoader = createTelemetryModuleLoader(exporterInstances);
+
+    await _createTelemetryTracerProvider({
+      apiKey: "test-key",
+      baseURL: "http://mistral.test/api",
+      moduleLoader,
+    });
+
+    expect(exporterInstances).toHaveLength(1);
+    expect(exporterInstances[0]?.config).toEqual({
+      url: "http://mistral.test/telemetry/v1/traces",
+      headers: { Authorization: "Bearer test-key" },
+    });
+  });
+
+  test("MISTRAL_OTLP_TRACES_ENDPOINT overrides the configured base URL endpoint", async () => {
+    await withEnv(
+      { [MISTRAL_OTLP_TRACES_ENDPOINT_ENV]: "http://collector:4318/v1/traces" },
+      async () => {
+        const exporterInstances: Array<{ config: unknown }> = [];
+        const moduleLoader = createTelemetryModuleLoader(exporterInstances);
+
+        await _createTelemetryTracerProvider({
+          apiKey: "test-key",
+          baseURL: "http://mistral.test",
+          moduleLoader,
+        });
+
+        expect(exporterInstances).toHaveLength(1);
+        expect(exporterInstances[0]?.config).toEqual({
+          url: "http://collector:4318/v1/traces",
+          headers: { Authorization: "Bearer test-key" },
+        });
+      },
+    );
+  });
+
+  test("wraps the exporter with redaction by default", async () => {
+    const exporterInstances: Array<{ config: unknown }> = [];
+    const moduleLoader = createTelemetryModuleLoader(exporterInstances);
+
+    const provider = await _createTelemetryTracerProvider({
+      apiKey: "test-key",
+      moduleLoader,
+    });
+
+    const processor = (provider as unknown as {
+      spanProcessors: Array<{ exporter: unknown }>;
+    }).spanProcessors[0];
+    expect(processor?.exporter).toBeInstanceOf(RedactingSpanExporter);
+  });
+
+  test("redaction=false exports without wrapping", async () => {
+    const exporterInstances: Array<{ config: unknown }> = [];
+    const moduleLoader = createTelemetryModuleLoader(exporterInstances);
+
+    const provider = await _createTelemetryTracerProvider({
+      apiKey: "test-key",
+      moduleLoader,
+      redaction: false,
+    });
+
+    const processor = (provider as unknown as {
+      spanProcessors: Array<{ exporter: unknown }>;
+    }).spanProcessors[0];
+    expect(processor?.exporter).toBe(exporterInstances[0]);
+    expect(processor?.exporter).not.toBeInstanceOf(RedactingSpanExporter);
+  });
+
+  test("accepts a custom redaction policy", async () => {
+    const exporterInstances: Array<{ config: unknown }> = [];
+    const moduleLoader = createTelemetryModuleLoader(exporterInstances);
+
+    const provider = await _createTelemetryTracerProvider({
+      apiKey: "test-key",
+      moduleLoader,
+      redaction: new RegexRedactionPolicy(),
+    });
+
+    const processor = (provider as unknown as {
+      spanProcessors: Array<{ exporter: unknown }>;
+    }).spanProcessors[0];
+    expect(processor?.exporter).toBeInstanceOf(RedactingSpanExporter);
+  });
+});
+
+describe("configureTelemetry redaction warnings", () => {
+  test("warns when redaction is passed in global mode", async () => {
+    const client = createClient();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    await configureTelemetry(client, "global", { redaction: true });
+
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test("warns when redaction is passed with a custom provider", async () => {
+    const client = createClient();
+    const provider = createProvider();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    await configureTelemetry(client, provider, {
+      redaction: new RegexRedactionPolicy(),
+    });
+
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test("does not warn when redaction is disabled in global mode", async () => {
+    const client = createClient();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    await configureTelemetry(client, "global", { redaction: false });
+
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  test("warns in global mode when redaction is omitted (on by default)", async () => {
+    const client = createClient();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    await configureTelemetry(client, "global");
+
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test("does not warn in env-driven global auto-config", async () => {
+    await withEnv({ [MISTRAL_SDK_TELEMETRY_ENV]: "global" }, async () => {
+      const hook = new TracingHook();
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+      const configured = await configureTelemetryForHook(hook, createContext(), {
+        respectGlobalProvider: true,
+      });
+
+      expect(configured).toBe(true);
+      expect(hook._telemetryUseGlobalProvider).toBe(true);
+      expect(warnSpy).not.toHaveBeenCalled();
+    });
+  });
+});

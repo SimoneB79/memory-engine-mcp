@@ -1,0 +1,25 @@
+import * as z from "zod/v4";
+import { Result as SafeParseResult } from "../../types/fp.js";
+import { SDKValidationError } from "../errors/sdkvalidationerror.js";
+import { DatasetRecordSource } from "./datasetrecordsource.js";
+export type DatasetRecord = {
+    id: string;
+    createdAt: Date;
+    updatedAt: Date;
+    deletedAt: Date | null;
+    datasetId: string;
+    /**
+     * Caller-authored input object stored on a dataset record.
+     */
+    payload: {
+        [k: string]: any;
+    };
+    properties: {
+        [k: string]: any;
+    };
+    source: DatasetRecordSource;
+};
+/** @internal */
+export declare const DatasetRecord$inboundSchema: z.ZodType<DatasetRecord, unknown>;
+export declare function datasetRecordFromJSON(jsonString: string): SafeParseResult<DatasetRecord, SDKValidationError>;
+//# sourceMappingURL=datasetrecord.d.ts.map

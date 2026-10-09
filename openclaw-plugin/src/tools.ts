@@ -7,7 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import { Engine, Row } from "./engine.js";
 import { buildSessionDigest } from "./digest.js";
 
-export const VERSION = "4.5.1";
+export const VERSION = "4.5.2";
 
 export function createTools(dbPath: string) {
   const db = new DatabaseSync(dbPath);
@@ -146,7 +146,7 @@ export function createTools(dbPath: string) {
       if (!old) throw new Error("Atom '" + oldAtomId + "' not found");
       const newId = title.toLowerCase().replace(/[^a-z0-9_\s]/g, "").trim().replace(/[\s_]+/g, "_").slice(0, 60);
       const cid = "contradiction_" + oldAtomId + "_" + now;
-      db.prepare("INSERT INTO atoms (id, type, memory_tier, domain, title, body, confidence, status, source, weight, tags, meta, created_at, updated_at, accessed_at, valid_from) VALUES (?,?,?,?,?,?,'ai',0.8,'active',1.0,?,?,?,?)")
+      db.prepare("INSERT INTO atoms (id, type, memory_tier, domain, title, body, confidence, status, source, weight, tags, meta, created_at, updated_at, accessed_at, valid_from) VALUES (?,?,?,?,?,?,0.8,'active','ai',1.0,?,?,?,?,?,?)")
         .run(newId, old.type, old.memory_tier, old.domain, title, body, JSON.stringify(["contradiction", "supersedes"]), JSON.stringify({ supersedes_atom_id: oldAtomId, contradiction_id: cid }), now, now, now, now);
       db.prepare("UPDATE atoms SET status = 'superseded', valid_until = COALESCE(valid_until, ?), updated_at = ? WHERE id = ?").run(now, now, oldAtomId);
       db.prepare("INSERT INTO memory_contradictions (id, old_atom_id, new_atom_id, reason, resolution, created_at, created_by, meta) VALUES (?,?,?,?,?,?,?,?)").run(cid, oldAtomId, newId, reason, "superseded", now, "ai", "{}");

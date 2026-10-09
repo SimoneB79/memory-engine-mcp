@@ -1,0 +1,1 @@
+{"version":3,"file":"schemafieldstorage.js","sourceRoot":"","sources":["../../../src/models/components/schemafieldstorage.ts"],"names":[],"mappings":"AAAA;;;GAGG;AAEH,OAAO,KAAK,CAAC,MAAM,QAAQ,CAAC;AAG5B,MAAM,CAAC,MAAM,kBAAkB,GAAG;IAChC,QAAQ,EAAE,WAAW;IACrB,MAAM,EAAE,SAAS;CACT,CAAC;AAGX,gBAAgB;AAChB,MAAM,CAAC,MAAM,iCAAiC,GAE1C,CAAC,CAAC,IAAI,CAAC,kBAAkB,CAAC,CAAC"}

@@ -1,0 +1,1 @@
+{"version":3,"file":"pipelineconfigscope.js","sourceRoot":"","sources":["../../../src/models/components/pipelineconfigscope.ts"],"names":[],"mappings":"AAAA;;;GAGG;AAGH,OAAO,KAAK,SAAS,MAAM,sBAAsB,CAAC;AAGlD,MAAM,CAAC,MAAM,mBAAmB,GAAG;IACjC,SAAS,EAAE,WAAW;IACtB,MAAM,EAAE,QAAQ;CACR,CAAC;AAGX,gBAAgB;AAChB,MAAM,CAAC,MAAM,iCAAiC,GAG1C,SAAS,CAAC,aAAa,CAAC,mBAAmB,CAAC,CAAC"}

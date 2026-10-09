@@ -1,0 +1,1 @@
+{"version":3,"file":"schemafieldindex.js","sourceRoot":"","sources":["../../../src/models/components/schemafieldindex.ts"],"names":[],"mappings":"AAAA;;;GAGG;AAEH,OAAO,KAAK,CAAC,MAAM,QAAQ,CAAC;AAG5B,MAAM,CAAC,MAAM,gBAAgB,GAAG;IAC9B,GAAG,EAAE,KAAK;IACV,IAAI,EAAE,MAAM;IACZ,SAAS,EAAE,WAAW;CACd,CAAC;AAGX,gBAAgB;AAChB,MAAM,CAAC,MAAM,+BAA+B,GAExC,CAAC,CAAC,IAAI,CAAC,gBAAgB,CAAC,CAAC"}

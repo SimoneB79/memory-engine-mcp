@@ -1,0 +1,12 @@
+import * as z from "zod/v4";
+export type DeletePipelineConfigV1ObservabilityPipelineConfigsPipelineConfigIdDeleteRequest = {
+    pipelineConfigId: string;
+};
+/** @internal */
+export type DeletePipelineConfigV1ObservabilityPipelineConfigsPipelineConfigIdDeleteRequest$Outbound = {
+    pipeline_config_id: string;
+};
+/** @internal */
+export declare const DeletePipelineConfigV1ObservabilityPipelineConfigsPipelineConfigIdDeleteRequest$outboundSchema: z.ZodType<DeletePipelineConfigV1ObservabilityPipelineConfigsPipelineConfigIdDeleteRequest$Outbound, DeletePipelineConfigV1ObservabilityPipelineConfigsPipelineConfigIdDeleteRequest>;
+export declare function deletePipelineConfigV1ObservabilityPipelineConfigsPipelineConfigIdDeleteRequestToJSON(deletePipelineConfigV1ObservabilityPipelineConfigsPipelineConfigIdDeleteRequest: DeletePipelineConfigV1ObservabilityPipelineConfigsPipelineConfigIdDeleteRequest): string;
+//# sourceMappingURL=deletepipelineconfigv1observabilitypipelineconfigspipelineconfigiddelete.d.ts.map

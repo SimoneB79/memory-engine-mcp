@@ -1,6 +1,6 @@
 {
   "name": "openclaw-plugin-memory-engine",
-  "version": "4.5.1",
+  "version": "4.5.2",
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json && openclaw plugins build",
@@ -26,7 +26,7 @@
   "devDependencies": {
     "openclaw": "latest",
     "typescript": "^7.0.2",
-    "vitest": "^3.3.0"
+    "vitest": "^3.2.4"
   },
   "openclaw": {
     "extensions": [

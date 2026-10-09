@@ -1,0 +1,97 @@
+# Changelog
+
+## 0.3.12 - 2026-09-08
+
+- Added prepared proxy DNS lookups and proxy-specific TLS controls to Node helper agents and raw CONNECT tunnels, including client certificates and explicit server names.
+- Unified proxy socket creation while preserving URL-owned routing, independent destination TLS, and existing request cancellation.
+- Updated the Undici development and test dependency to 8.10.2 without changing the public peer range.
+- Strengthened standalone bundle verification under Bun by disabling automatic dependency installation and checking that relocated output cannot resolve Undici package metadata.
+
+## 0.3.11 - 2026-09-06
+
+- Fixed standalone bundles by importing the installed Undici peer entrypoint statically, preserving Bun compatibility without requiring package metadata beside relocated output.
+- Preserved caller-supplied cancellation errors when destroying requests during pending HTTP-forward or CONNECT setup.
+
+## 0.3.10 - 2026-09-06
+
+- Fixed runtime loading under Bun to use the installed Undici peer for fetch classes and dispatcher cleanup instead of Bun's built-in compatibility module.
+
+## 0.3.9 - 2026-09-05
+
+**Highlights:** Destroying a pending HTTPS request now releases its stalled proxy connection immediately.
+
+- Fixed Node CONNECT agents to cancel pending proxy sockets when callers abort or destroy requests, matching HTTP-forward cancellation. Thanks @SebTardif.
+- Updated the Undici test peer, Node types, tsx, pnpm, Node.js release tooling, and GitHub Pages deployment tooling.
+
+## 0.3.8 - 2026-08-31
+
+- Fixed HTTP-forward Node agents to enforce the default 30-second proxy handshake timeout and cancel pending sockets when callers abort or destroy requests; explicit `0` remains unbounded. (#27) Thanks @SebTardif.
+- Fixed Node proxy request hooks to follow the request selected by finite connection pools across origins, keeping queued requests' timeouts and cancellation independent. (#27)
+- Hardened ambient `NO_PROXY` hostname normalization against dot-heavy input, docs table-of-contents text extraction, and proxy/TLS test isolation. (#24) Thanks @vincentkoc.
+- Fixed HTTP-forward agent shutdown to destroy pending proxy sockets and settle requests before the connection handshake completes. (#23) Thanks @SebTardif.
+- Fixed throwing `onEvent` observers to preserve successful installation and leave the proxy runtime stoppable and replaceable. (#23) Thanks @SebTardif.
+- Updated Node types, tsx, ws, and pnpm tooling. (#21, #22)
+
+## 0.3.7 - 2026-08-02
+
+- Fixed Node HTTP/HTTPS proxy agents to apply the default 30-second CONNECT timeout when callers omit a request timeout; explicit `0` remains unbounded. Thanks @SebTardif.
+- Updated Undici and tsx, pnpm and npm release tooling, and pinned GitHub Actions to their latest stable releases.
+
+## 0.3.6 - 2026-08-02
+
+- Fixed HTTP forwarding through HTTPS proxies to wait for the proxy TLS handshake before assigning the socket to Node's agent. Thanks @SebTardif.
+- Added a 30-second default timeout to `openProxyConnectTunnel` when `timeoutMs` is omitted; pass `0` for unbounded waits. Thanks @SebTardif.
+
+## 0.3.5 - 2026-08-01
+
+- Fixed malformed percent-encoding in proxy credentials to fail through CONNECT promises and Node request errors with `INVALID_PROXY_USERINFO`. Thanks @SebTardif.
+- Updated Undici, WebSocket and TypeScript tooling, pnpm, and pinned GitHub Actions to their latest stable releases.
+
+## 0.3.4 - 2026-07-20
+
+- Added `AbortSignal` cancellation to explicit CONNECT tunnels, including active socket cleanup.
+- Fixed managed HTTPS proxy connections to IPv6 literal endpoints so equivalent compressed and expanded certificate addresses validate without sending IP-literal SNI.
+- Updated Undici to 8.5.0 and raised the compatible peer floor to pick up current security fixes; refreshed pnpm, Node types, and transitive esbuild tooling.
+
+## 0.3.3 - 2026-05-18
+
+- Fixed managed `globalThis.fetch` so later Undici global dispatcher replacement cannot bypass the active Proxyline dispatcher. Thanks @jesse-merhi.
+- Updated package tooling and test dependencies to exact latest versions, including pnpm 11.1.2, TypeScript 6.0.3, and Undici 8.3.0; raised the Node.js floor to 22.19.0 to match Undici 8.
+
+## 0.3.2 - 2026-05-17
+
+- Fixed managed Undici proxy dispatchers so HTTPS proxy endpoints addressed by IP do not send invalid IP-literal SNI.
+
+## 0.3.1 - 2026-05-16
+
+- Fixed `withBypass()` to scope temporary bypasses to the calling async context instead of process-wide state.
+- Fixed HTTPS SNI preservation when Node request options override a URL hostname.
+- Hardened package and docs release output by preserving declaration-map sources, shipping product docs, rejecting duplicate docs pages, avoiding lockfile-bypassing prepack installs, and keeping package artifact checks portable on Windows.
+
+## 0.3.0 - 2026-05-15
+
+- Added branded Proxyline dispatcher detection, reusable active-runtime installs, scoped dynamic bypass registration, first-class undici dispatcher tuning options, and a side-effect-light dispatcher detection subpath.
+- Fixed async scoped bypass lifetimes, ambient runtime reuse compatibility checks, WebSocket surface matching, and zero-valued undici timeout handling.
+- Moved `undici` to a peer dependency so host applications share one global dispatcher runtime with Proxyline.
+
+## 0.2.0 - 2026-05-14
+
+- Added ambient Node proxy helper exports and replaced the `proxy-agent` dependency with Proxyline's scoped HTTP/HTTPS Node agent.
+- Added a native Node coverage command and `pnpm check` coverage gates for source lines, branches, and functions.
+- Expanded CI to run the coverage-gated check across Ubuntu, macOS, and Windows on Node 20.18.1, 22, 24, and 26.
+- Hardened ambient proxy routing, CONNECT target validation, undici dispatcher cleanup, and generated package output after the runtime module split.
+- Added managed-mode `bypassPolicy` support so trusted callers can intentionally route selected loopback/control-plane traffic directly while keeping the rest of managed traffic proxied.
+- Stopped versioning generated `dist/` output in git; release and package dry-run flows now build `dist/` during `prepack` and still publish generated JavaScript, declarations, and declaration maps.
+
+## 0.1.0 - 2026-05-11
+
+- Initial public release of `@openclaw/proxyline` for process-global proxy routing in Node.js.
+- Added managed mode for fail-closed proxy policy with required `proxyUrl`, global `node:http`/`node:https` patching, global agent replacement, and undici/fetch routing through `ProxyAgent`.
+- Added ambient mode for `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, lowercase variants, bare proxy endpoints, and `NO_PROXY` exemptions with matching diagnostics.
+- Added proxy-aware helpers for Node agents, WebSocket clients, undici dispatchers, and explicit HTTP CONNECT tunnels.
+- Added scoped proxy TLS trust via `proxyTls.ca` and `proxyTls.caFile`, preserving destination TLS identity while trusting private proxy CAs.
+- Added structured observability with `explain()`, `onEvent`, redacted proxy URLs, install/stop lifecycle events, and per-decision diagnostics.
+- Added runtime cleanup with `proxy.stop()` to restore captured Node HTTP(S) methods, global agents, and the undici global dispatcher.
+- Added credential-safe proxy authorization handling for proxy URLs with userinfo.
+- Added in-process proxy lab coverage for HTTP, HTTPS, CONNECT, WebSocket, undici/fetch, proxy auth, loopback blocking, HTTPS proxies, TLS preservation, and IPv6 `NO_PROXY`.
+- Added full documentation for getting started, modes, surfaces, API reference, environment variables, proxy TLS, observability, security, troubleshooting, and testing.

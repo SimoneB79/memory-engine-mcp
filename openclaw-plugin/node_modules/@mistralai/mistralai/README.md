@@ -1,0 +1,1447 @@
+# Mistral Typescript Client
+
+> **This is v2 of the Mistral TypeScript SDK.**
+>
+> Key changes from v1: **ESM-only**, shorter type names, forward-compatible enums/unions, Zod v4.
+> See the **[Migration Guide](https://github.com/mistralai/client-ts/blob/main/MIGRATION.md)** for full details.
+>
+> To pin v1: `npm install @mistralai/mistralai@^1` · **[v1 documentation and source](https://github.com/mistralai/client-ts/tree/v1)**
+
+<!-- Start Summary [summary] -->
+## Summary
+
+Mistral AI API: Our Chat Completion and Embeddings APIs specification. Create your account on [La Plateforme](https://console.mistral.ai) to get access and read the [docs](https://docs.mistral.ai) to learn how to use it.
+<!-- End Summary [summary] -->
+
+<!-- Start Table of Contents [toc] -->
+## Table of Contents
+<!-- $toc-max-depth=2 -->
+* [Mistral Typescript Client](#mistral-typescript-client)
+  * [SDK Installation](#sdk-installation)
+  * [Requirements](#requirements)
+  * [API Key Setup](#api-key-setup)
+  * [SDK Example Usage](#sdk-example-usage)
+  * [Providers' SDKs](#providers-sdks)
+  * [Available Resources and Operations](#available-resources-and-operations)
+  * [Server-sent event streaming](#server-sent-event-streaming)
+  * [Pagination](#pagination)
+  * [File uploads](#file-uploads)
+  * [Retries](#retries)
+  * [Error Handling](#error-handling)
+  * [Server Selection](#server-selection)
+  * [Custom HTTP Client](#custom-http-client)
+  * [Authentication](#authentication)
+  * [Standalone functions](#standalone-functions)
+  * [Debugging](#debugging)
+  * [Telemetry & Observability](#telemetry-observability)
+* [Development](#development)
+  * [Contributions](#contributions)
+
+<!-- End Table of Contents [toc] -->
+
+<!-- Start SDK Installation [installation] -->
+## SDK Installation
+
+The SDK can be installed with either [npm](https://www.npmjs.com/), [pnpm](https://pnpm.io/), [bun](https://bun.sh/) or [yarn](https://classic.yarnpkg.com/en/) package managers.
+
+### NPM
+
+```bash
+npm add @mistralai/mistralai
+```
+
+### PNPM
+
+```bash
+pnpm add @mistralai/mistralai
+```
+
+### Bun
+
+```bash
+bun add @mistralai/mistralai
+```
+
+### Yarn
+
+```bash
+yarn add @mistralai/mistralai
+```
+
+> [!NOTE]
+> This package is published as an ES Module (ESM) only. For applications using
+> CommonJS, use `await import("@mistralai/mistralai")` to import and use this package.
+<!-- End SDK Installation [installation] -->
+
+<!-- Start Requirements [requirements] -->
+## Requirements
+
+For supported JavaScript runtimes, please consult [RUNTIMES.md](RUNTIMES.md).
+<!-- End Requirements [requirements] -->
+
+## API Key Setup
+
+Before you begin, you will need a Mistral AI API key.
+
+1. Get your own Mistral API Key: <https://docs.mistral.ai/#api-access>
+2. Set your Mistral API Key as an environment variable. You only need to do this once.
+
+```bash
+# set Mistral API Key (using zsh for example)
+$ echo 'export MISTRAL_API_KEY=[your_key_here]' >> ~/.zshenv
+
+# reload the environment (or just quit and open a new terminal)
+$ source ~/.zshenv
+```
+
+<!-- Start SDK Example Usage [usage] -->
+## SDK Example Usage
+
+### Create Chat Completions
+
+This example shows how to create chat completions.
+
+```typescript
+import { Mistral } from "@mistralai/mistralai";
+
+const mistral = new Mistral({
+  apiKey: process.env["MISTRAL_API_KEY"] ?? "",
+});
+
+async function run() {
+  const result = await mistral.chat.complete({
+    model: "mistral-large-latest",
+    messages: [
+      {
+        role: "user",
+        content:
+          "Who is the best French painter? Answer in one short sentence.",
+      },
+    ],
+    responseFormat: {
+      type: "text",
+    },
+  });
+
+  console.log(result);
+}
+
+run();
+
+```
+
+### Upload a file
+
+This example shows how to upload a file.
+
+```typescript
+import { Mistral } from "@mistralai/mistralai";
+import { openAsBlob } from "node:fs";
+
+const mistral = new Mistral({
+  apiKey: process.env["MISTRAL_API_KEY"] ?? "",
+});
+
+async function run() {
+  const result = await mistral.files.upload({
+    file: await openAsBlob("example.file"),
+  });
+
+  console.log(result);
+}
+
+run();
+
+```
+
+### Create Agents Completions
+
+This example shows how to create agents completions.
+
+```typescript
+import { Mistral } from "@mistralai/mistralai";
+
+const mistral = new Mistral({
+  apiKey: process.env["MISTRAL_API_KEY"] ?? "",
+});
+
+async function run() {
+  const result = await mistral.agents.complete({
+    messages: [
+      {
+        role: "user",
+        content:
+          "Who is the best French painter? Answer in one short sentence.",
+      },
+    ],
+    responseFormat: {
+      type: "text",
+    },
+    agentId: "<id>",
+  });
+
+  console.log(result);
+}
+
+run();
+
+```
+
+### Create Embedding Request
+
+This example shows how to create embedding request.
+
+```typescript
+import { Mistral } from "@mistralai/mistralai";
+
+const mistral = new Mistral({
+  apiKey: process.env["MISTRAL_API_KEY"] ?? "",
+});
+
+async function run() {
+  const result = await mistral.embeddings.create({
+    model: "mistral-embed",
+    inputs: [
+      "Embed this sentence.",
+      "As well as this one.",
+    ],
+  });
+
+  console.log(result);
+}
+
+run();
+
+```
+<!-- End SDK Example Usage [usage] -->
+
+## Providers' SDKs
+
+We have dedicated SDKs for the following providers:
+
+- [GCP](https://github.com/mistralai/client-ts/tree/main/packages/mistralai-gcp)
+- [Azure](https://github.com/mistralai/client-ts/tree/main/packages/mistralai-azure)
+
+<!-- Start Available Resources and Operations [operations] -->
+## Available Resources and Operations
+
+<details open>
+<summary>Available methods</summary>
+
+### [Agents](docs/sdks/agents/README.md)
+
+* [complete](docs/sdks/agents/README.md#complete) - Agents Completion
+* [stream](docs/sdks/agents/README.md#stream) - Stream Agents completion
+
+### [Audio.Speech](docs/sdks/speech/README.md)
+
+* [complete](docs/sdks/speech/README.md#complete) - Speech
+
+### [Audio.Transcriptions](docs/sdks/transcriptions/README.md)
+
+* [complete](docs/sdks/transcriptions/README.md#complete) - Create Transcription
+* [stream](docs/sdks/transcriptions/README.md#stream) - Create Streaming Transcription (SSE)
+
+### [Audio.Voices](docs/sdks/voices/README.md)
+
+* [~~list~~](docs/sdks/voices/README.md#list) - List all voices :warning: **Deprecated**
+* [create](docs/sdks/voices/README.md#create) - Create a new voice
+* [delete](docs/sdks/voices/README.md#delete) - Delete a custom voice
+* [update](docs/sdks/voices/README.md#update) - Update voice metadata
+* [get](docs/sdks/voices/README.md#get) - Get voice details
+* [getSampleAudio](docs/sdks/voices/README.md#getsampleaudio) - Get voice sample audio
+
+### [Batch.Jobs](docs/sdks/jobs/README.md)
+
+* [list](docs/sdks/jobs/README.md#list) - Get Batch Jobs
+* [create](docs/sdks/jobs/README.md#create) - Create Batch Job
+* [get](docs/sdks/jobs/README.md#get) - Get Batch Job
+* [delete](docs/sdks/jobs/README.md#delete) - Delete Batch Job
+* [cancel](docs/sdks/jobs/README.md#cancel) - Cancel Batch Job
+
+### [Beta.Agents](docs/sdks/betaagents/README.md)
+
+* [create](docs/sdks/betaagents/README.md#create) - Create a agent that can be used within a conversation.
+* [~~list~~](docs/sdks/betaagents/README.md#list) - List agent entities. :warning: **Deprecated** Use [listPages](docs/sdks/betaagents/README.md#listpages) instead.
+* [listPages](docs/sdks/betaagents/README.md#listpages) - List agent entities, cursor-paginated.
+* [get](docs/sdks/betaagents/README.md#get) - Retrieve an agent entity.
+* [update](docs/sdks/betaagents/README.md#update) - Update an agent entity.
+* [delete](docs/sdks/betaagents/README.md#delete) - Delete an agent entity.
+* [updateVersion](docs/sdks/betaagents/README.md#updateversion) - Update an agent version.
+* [listVersions](docs/sdks/betaagents/README.md#listversions) - List all versions of an agent.
+* [getVersion](docs/sdks/betaagents/README.md#getversion) - Retrieve a specific version of an agent.
+* [createVersionAlias](docs/sdks/betaagents/README.md#createversionalias) - Create or update an agent version alias.
+* [listVersionAliases](docs/sdks/betaagents/README.md#listversionaliases) - List all aliases for an agent.
+* [deleteVersionAlias](docs/sdks/betaagents/README.md#deleteversionalias) - Delete an agent version alias.
+
+### [Beta.Connectors](docs/sdks/connectors/README.md)
+
+* [create](docs/sdks/connectors/README.md#create) - Create a new connector.
+* [list](docs/sdks/connectors/README.md#list) - List all connectors.
+* [getAuthUrl](docs/sdks/connectors/README.md#getauthurl) - Get the auth URL for a connector.
+* [share](docs/sdks/connectors/README.md#share) - Share a private connector to the current workspace.
+* [unshare](docs/sdks/connectors/README.md#unshare) - Unshare a connector from the current workspace.
+* [shareToOrganization](docs/sdks/connectors/README.md#sharetoorganization) - Share a connector to the current organization.
+* [unshareFromOrganization](docs/sdks/connectors/README.md#unsharefromorganization) - Unshare a connector from the current organization.
+* [activateForConsumer](docs/sdks/connectors/README.md#activateforconsumer) - Activate a connector for the given consumer (organization, workspace, user).
+* [deactivateForConsumer](docs/sdks/connectors/README.md#deactivateforconsumer) - Deactivate a connector for the current consumer (at organization, workspace or user level).
+* [callTool](docs/sdks/connectors/README.md#calltool) - Call Connector Tool
+* [listTools](docs/sdks/connectors/README.md#listtools) - List tools for a connector.
+* [getAuthenticationMethods](docs/sdks/connectors/README.md#getauthenticationmethods) - Get authentication methods for a connector.
+* [listOrganizationCredentials](docs/sdks/connectors/README.md#listorganizationcredentials) - List organization credentials for a connector.
+* [listWorkspaceCredentials](docs/sdks/connectors/README.md#listworkspacecredentials) - List workspace credentials for a connector.
+* [listUserCredentials](docs/sdks/connectors/README.md#listusercredentials) - List user credentials for a connector.
+* [deleteAllUserCredentials](docs/sdks/connectors/README.md#deleteallusercredentials) - Delete all user credentials for a connector.
+* [createCredentials](docs/sdks/connectors/README.md#createcredentials) - Create consumer credentials for a connector.
+* [updateCredentials](docs/sdks/connectors/README.md#updatecredentials) - Create or update consumer credentials for a connector.
+* [deleteOrganizationCredentials](docs/sdks/connectors/README.md#deleteorganizationcredentials) - Delete organization credentials for a connector.
+* [deleteWorkspaceCredentials](docs/sdks/connectors/README.md#deleteworkspacecredentials) - Delete workspace credentials for a connector.
+* [deleteUserCredentials](docs/sdks/connectors/README.md#deleteusercredentials) - Delete user credentials for a connector.
+* [get](docs/sdks/connectors/README.md#get) - Get a connector.
+* [update](docs/sdks/connectors/README.md#update) - Update a connector.
+* [delete](docs/sdks/connectors/README.md#delete) - Delete a connector.
+
+### [Beta.Conversations](docs/sdks/conversations/README.md)
+
+* [start](docs/sdks/conversations/README.md#start) - Create a conversation and append entries to it.
+* [list](docs/sdks/conversations/README.md#list) - List all created conversations.
+* [get](docs/sdks/conversations/README.md#get) - Retrieve a conversation information.
+* [delete](docs/sdks/conversations/README.md#delete) - Delete a conversation.
+* [append](docs/sdks/conversations/README.md#append) - Append new entries to an existing conversation.
+* [getHistory](docs/sdks/conversations/README.md#gethistory) - Retrieve all entries in a conversation.
+* [getMessages](docs/sdks/conversations/README.md#getmessages) - Retrieve all messages in a conversation.
+* [restart](docs/sdks/conversations/README.md#restart) - Restart a conversation starting from a given entry.
+* [startStream](docs/sdks/conversations/README.md#startstream) - Create a conversation and append entries to it.
+* [appendStream](docs/sdks/conversations/README.md#appendstream) - Append new entries to an existing conversation.
+* [restartStream](docs/sdks/conversations/README.md#restartstream) - Restart a conversation starting from a given entry.
+
+### [Beta.Libraries](docs/sdks/libraries/README.md)
+
+* [list](docs/sdks/libraries/README.md#list) - List all libraries you have access to.
+* [create](docs/sdks/libraries/README.md#create) - Create a new Library.
+* [get](docs/sdks/libraries/README.md#get) - Detailed information about a specific Library.
+* [delete](docs/sdks/libraries/README.md#delete) - Delete a library and all of it's document.
+* [update](docs/sdks/libraries/README.md#update) - Update a library.
+* [~~librariesUpdateV1~~](docs/sdks/libraries/README.md#librariesupdatev1) - Update a library. :warning: **Deprecated**
+
+#### [Beta.Libraries.Accesses](docs/sdks/accesses/README.md)
+
+* [list](docs/sdks/accesses/README.md#list) - List all of the access to this library.
+* [updateOrCreate](docs/sdks/accesses/README.md#updateorcreate) - Create or update an access level.
+* [delete](docs/sdks/accesses/README.md#delete) - Delete an access level.
+
+#### [Beta.Libraries.Documents](docs/sdks/documents/README.md)
+
+* [list](docs/sdks/documents/README.md#list) - List documents in a given library.
+* [upload](docs/sdks/documents/README.md#upload) - Upload a new document.
+* [get](docs/sdks/documents/README.md#get) - Retrieve the metadata of a specific document.
+* [update](docs/sdks/documents/README.md#update) - Update the metadata of a specific document.
+* [~~librariesDocumentsUpdateV1~~](docs/sdks/documents/README.md#librariesdocumentsupdatev1) - Update the metadata of a specific document. :warning: **Deprecated**
+* [delete](docs/sdks/documents/README.md#delete) - Delete a document.
+* [textContent](docs/sdks/documents/README.md#textcontent) - Retrieve the text content of a specific document.
+* [status](docs/sdks/documents/README.md#status) - Retrieve the processing status of a specific document.
+* [getSignedUrl](docs/sdks/documents/README.md#getsignedurl) - Retrieve the signed URL of a specific document.
+* [extractedTextSignedUrl](docs/sdks/documents/README.md#extractedtextsignedurl) - Retrieve the signed URL of text extracted from a given document.
+* [reprocess](docs/sdks/documents/README.md#reprocess) - Reprocess a document.
+
+### [Beta.Observability.Datasets](docs/sdks/datasets/README.md)
+
+* [create](docs/sdks/datasets/README.md#create) - Create a new empty dataset
+* [list](docs/sdks/datasets/README.md#list) - List existing datasets
+* [fetch](docs/sdks/datasets/README.md#fetch) - Get dataset by id
+* [delete](docs/sdks/datasets/README.md#delete) - Delete a dataset
+* [update](docs/sdks/datasets/README.md#update) - Patch dataset
+* [listRecords](docs/sdks/datasets/README.md#listrecords) - List existing records in the dataset
+* [createRecord](docs/sdks/datasets/README.md#createrecord) - Add a record to the dataset
+* [importFromFile](docs/sdks/datasets/README.md#importfromfile) - Populate the dataset with records from an uploaded file
+* [importFromPlayground](docs/sdks/datasets/README.md#importfromplayground) - Populate the dataset with records from playground conversations
+* [importFromDatasetRecords](docs/sdks/datasets/README.md#importfromdatasetrecords) - Populate the dataset with records from another dataset
+* [exportToJsonl](docs/sdks/datasets/README.md#exporttojsonl) - Export to the Files API and retrieve presigned URL to download the resulting JSONL file
+* [fetchTask](docs/sdks/datasets/README.md#fetchtask) - Get status of a dataset import task
+* [listTasks](docs/sdks/datasets/README.md#listtasks) - List import tasks for the given dataset
+
+#### [Beta.Observability.Datasets.Records](docs/sdks/records/README.md)
+
+* [fetch](docs/sdks/records/README.md#fetch) - Get the content of a given dataset record
+* [delete](docs/sdks/records/README.md#delete) - Delete a record from a dataset
+* [bulkDelete](docs/sdks/records/README.md#bulkdelete) - Delete multiple records from datasets
+* [judge](docs/sdks/records/README.md#judge) - Run Judge on a dataset record based on the given options
+* [updatePayload](docs/sdks/records/README.md#updatepayload) - Update a dataset record payload
+* [updateProperties](docs/sdks/records/README.md#updateproperties) - Update dataset record properties
+
+### [Beta.Observability.Evaluations](docs/sdks/evaluations/README.md)
+
+* [createPipelineConfig](docs/sdks/evaluations/README.md#createpipelineconfig) - Create a worker pipeline configuration
+* [listPipelineConfigs](docs/sdks/evaluations/README.md#listpipelineconfigs) - List worker pipeline configurations
+* [getPipelineConfig](docs/sdks/evaluations/README.md#getpipelineconfig) - Get a worker pipeline configuration
+* [updatePipelineConfig](docs/sdks/evaluations/README.md#updatepipelineconfig) - Replace a worker pipeline configuration
+* [deletePipelineConfig](docs/sdks/evaluations/README.md#deletepipelineconfig) - Delete a worker pipeline configuration
+
+### [Beta.Observability.Judges](docs/sdks/judges/README.md)
+
+* [create](docs/sdks/judges/README.md#create) - Create a new judge
+* [list](docs/sdks/judges/README.md#list) - Get judges with optional filtering and search
+* [fetch](docs/sdks/judges/README.md#fetch) - Get judge by id
+* [delete](docs/sdks/judges/README.md#delete) - Delete a judge
+* [update](docs/sdks/judges/README.md#update) - Update a judge
+* [judgeConversation](docs/sdks/judges/README.md#judgeconversation) - Run a saved judge on a conversation
+
+### [Beta.Observability.Logs](docs/sdks/logs/README.md)
+
+* [search](docs/sdks/logs/README.md#search) - Search logs
+* [list](docs/sdks/logs/README.md#list) - Get log field definitions
+* [fetchOptions](docs/sdks/logs/README.md#fetchoptions) - Get options for a log field
+
+### [Beta.Observability.Spans](docs/sdks/spans/README.md)
+
+* [searchSpans](docs/sdks/spans/README.md#searchspans) - Search spans
+* [aggregate](docs/sdks/spans/README.md#aggregate) - Aggregate spans
+* [searchSpanEvaluations](docs/sdks/spans/README.md#searchspanevaluations) - Search span evaluations
+* [searchLatestSpanEvaluations](docs/sdks/spans/README.md#searchlatestspanevaluations) - Search latest span evaluations
+* [listSpanFields](docs/sdks/spans/README.md#listspanfields) - Get span field definitions
+* [listSpanEvalFields](docs/sdks/spans/README.md#listspanevalfields) - Get span evaluation field definitions
+* [fetchSpanFieldOptions](docs/sdks/spans/README.md#fetchspanfieldoptions) - Get options for a span field
+* [fetchSpanEvalFieldOptions](docs/sdks/spans/README.md#fetchspanevalfieldoptions) - Get options for a span evaluation field
+
+### [Beta.Observability.Traces](docs/sdks/traces/README.md)
+
+* [search](docs/sdks/traces/README.md#search) - Search traces
+* [aggregate](docs/sdks/traces/README.md#aggregate) - Aggregate traces
+* [getTraceFields](docs/sdks/traces/README.md#gettracefields) - Get trace field definitions
+* [getTraceById](docs/sdks/traces/README.md#gettracebyid) - Get trace by id
+* [getTraceSpans](docs/sdks/traces/README.md#gettracespans) - Get trace spans
+* [fetchOptions](docs/sdks/traces/README.md#fetchoptions) - Get options for a trace field
+* [getSpanById](docs/sdks/traces/README.md#getspanbyid) - Get span by id
+
+### [Beta.Prompts](docs/sdks/prompts/README.md)
+
+* [list](docs/sdks/prompts/README.md#list) - ListPrompts
+* [create](docs/sdks/prompts/README.md#create) - CreatePrompt
+* [get](docs/sdks/prompts/README.md#get) - GetPrompt
+* [delete](docs/sdks/prompts/README.md#delete) - DeletePrompt
+* [updateMetadata](docs/sdks/prompts/README.md#updatemetadata) - UpdatePrompt
+* [listVersions](docs/sdks/prompts/README.md#listversions) - ListPromptVersions
+* [createVersion](docs/sdks/prompts/README.md#createversion) - CreatePromptVersion
+* [getVersion](docs/sdks/prompts/README.md#getversion) - GetPromptVersion
+* [updateVersionMetadata](docs/sdks/prompts/README.md#updateversionmetadata) - UpdatePromptVersionMetadata
+
+### [Beta.Rag.IngestionPipelineConfigurations](docs/sdks/ingestionpipelineconfigurations/README.md)
+
+* [list](docs/sdks/ingestionpipelineconfigurations/README.md#list) - List ingestion pipeline configurations
+* [register](docs/sdks/ingestionpipelineconfigurations/README.md#register) - Register Config
+* [updateRunInfo](docs/sdks/ingestionpipelineconfigurations/README.md#updateruninfo) - Update Run Info
+
+### [Beta.Rag.SearchIndexes](docs/sdks/searchindexes/README.md)
+
+* [getDeploymentSummaries](docs/sdks/searchindexes/README.md#getdeploymentsummaries) - Get Deployment Summaries
+* [registerDeployment](docs/sdks/searchindexes/README.md#registerdeployment) - Register (or re-register) a search index
+* [unregisterDeployment](docs/sdks/searchindexes/README.md#unregisterdeployment) - Unregister Deployment
+* [updateIndexMetrics](docs/sdks/searchindexes/README.md#updateindexmetrics) - Update Index Metrics
+
+### [Beta.ServiceAccounts](docs/sdks/serviceaccounts/README.md)
+
+* [create](docs/sdks/serviceaccounts/README.md#create) - Create Service Account
+* [list](docs/sdks/serviceaccounts/README.md#list) - List Service Accounts
+* [listAssignableRoles](docs/sdks/serviceaccounts/README.md#listassignableroles) - List Assignable Service Account Roles
+* [get](docs/sdks/serviceaccounts/README.md#get) - Get Service Account
+* [update](docs/sdks/serviceaccounts/README.md#update) - Update Service Account
+* [delete](docs/sdks/serviceaccounts/README.md#delete) - Delete Service Account
+* [setRoles](docs/sdks/serviceaccounts/README.md#setroles) - Set Service Account Roles
+* [listRoles](docs/sdks/serviceaccounts/README.md#listroles) - List Service Account Roles
+
+### [Beta.Skills](docs/sdks/skills/README.md)
+
+* [list](docs/sdks/skills/README.md#list) - ListSkills
+* [create](docs/sdks/skills/README.md#create) - CreateSkill
+* [get](docs/sdks/skills/README.md#get) - GetSkill
+* [delete](docs/sdks/skills/README.md#delete) - DeleteSkill
+* [updateMetadata](docs/sdks/skills/README.md#updatemetadata) - UpdateSkill
+* [listVersions](docs/sdks/skills/README.md#listversions) - ListSkillVersions
+* [createVersion](docs/sdks/skills/README.md#createversion) - CreateSkillVersion
+* [getVersion](docs/sdks/skills/README.md#getversion) - GetSkillVersion
+* [updateVersionMetadata](docs/sdks/skills/README.md#updateversionmetadata) - UpdateSkillVersionMetadata
+
+### [Beta.Users](docs/sdks/users/README.md)
+
+* [getIdentity](docs/sdks/users/README.md#getidentity) - Get Identity
+* [listOrganizations](docs/sdks/users/README.md#listorganizations) - List Organizations
+* [listWorkspaces](docs/sdks/users/README.md#listworkspaces) - List Workspaces
+
+### [Chat](docs/sdks/chat/README.md)
+
+* [complete](docs/sdks/chat/README.md#complete) - Chat Completion
+* [stream](docs/sdks/chat/README.md#stream) - Stream chat completion
+
+### [Classifiers](docs/sdks/classifiers/README.md)
+
+* [moderate](docs/sdks/classifiers/README.md#moderate) - Moderations
+* [moderateChat](docs/sdks/classifiers/README.md#moderatechat) - Chat Moderations
+* [classify](docs/sdks/classifiers/README.md#classify) - Classifications
+* [classifyChat](docs/sdks/classifiers/README.md#classifychat) - Chat Classifications
+
+### [Embeddings](docs/sdks/embeddings/README.md)
+
+* [create](docs/sdks/embeddings/README.md#create) - Embeddings
+
+### [Events](docs/sdks/events/README.md)
+
+* [getStreamEvents](docs/sdks/events/README.md#getstreamevents) - Get Stream Events
+* [getWorkflowEvents](docs/sdks/events/README.md#getworkflowevents) - Get Workflow Events
+
+### [Files](docs/sdks/files/README.md)
+
+* [upload](docs/sdks/files/README.md#upload) - Upload File
+* [list](docs/sdks/files/README.md#list) - List Files
+* [retrieve](docs/sdks/files/README.md#retrieve) - Retrieve File
+* [delete](docs/sdks/files/README.md#delete) - Delete File
+* [download](docs/sdks/files/README.md#download) - Download File
+* [getSignedUrl](docs/sdks/files/README.md#getsignedurl) - Get Signed Url
+
+### [Fim](docs/sdks/fim/README.md)
+
+* [complete](docs/sdks/fim/README.md#complete) - Fim Completion
+* [stream](docs/sdks/fim/README.md#stream) - Stream fim completion
+
+### [Models](docs/sdks/models/README.md)
+
+* [list](docs/sdks/models/README.md#list) - List Models
+* [retrieve](docs/sdks/models/README.md#retrieve) - Retrieve Model
+* [delete](docs/sdks/models/README.md#delete) - Delete Model
+* [update](docs/sdks/models/README.md#update) - Update Fine Tuned Model
+* [archive](docs/sdks/models/README.md#archive) - Archive Fine Tuned Model
+* [unarchive](docs/sdks/models/README.md#unarchive) - Unarchive Fine Tuned Model
+
+### [Ocr](docs/sdks/ocr/README.md)
+
+* [process](docs/sdks/ocr/README.md#process) - OCR
+
+### [Realtime.Sessions](docs/sdks/sessions/README.md)
+
+* [create](docs/sdks/sessions/README.md#create) - Create Client Session
+
+### [Workflows](docs/sdks/workflows/README.md)
+
+* [getWorkflows](docs/sdks/workflows/README.md#getworkflows) - Get Workflows
+* [getWorkflowRegistrations](docs/sdks/workflows/README.md#getworkflowregistrations) - Get Workflow Registrations
+* [executeWorkflow](docs/sdks/workflows/README.md#executeworkflow) - Execute Workflow
+* [~~executeWorkflowRegistration~~](docs/sdks/workflows/README.md#executeworkflowregistration) - Execute Workflow Registration :warning: **Deprecated**
+* [getWorkflow](docs/sdks/workflows/README.md#getworkflow) - Get Workflow
+* [updateWorkflow](docs/sdks/workflows/README.md#updateworkflow) - Update Workflow
+* [getWorkflowRegistration](docs/sdks/workflows/README.md#getworkflowregistration) - Get Workflow Registration
+* [bulkArchiveWorkflows](docs/sdks/workflows/README.md#bulkarchiveworkflows) - Bulk Archive Workflows
+* [bulkUnarchiveWorkflows](docs/sdks/workflows/README.md#bulkunarchiveworkflows) - Bulk Unarchive Workflows
+* [archiveWorkflow](docs/sdks/workflows/README.md#archiveworkflow) - Archive Workflow
+* [unarchiveWorkflow](docs/sdks/workflows/README.md#unarchiveworkflow) - Unarchive Workflow
+
+#### [Workflows.Deployments](docs/sdks/deployments/README.md)
+
+* [listDeployments](docs/sdks/deployments/README.md#listdeployments) - List Deployments
+* [createDeployment](docs/sdks/deployments/README.md#createdeployment) - Create Deployment
+* [updateDeployment](docs/sdks/deployments/README.md#updatedeployment) - Update Deployment
+* [deleteDeployment](docs/sdks/deployments/README.md#deletedeployment) - Delete Deployment
+* [getDeployment](docs/sdks/deployments/README.md#getdeployment) - Get Deployment
+* [stopDeployment](docs/sdks/deployments/README.md#stopdeployment) - Stop Deployment
+* [startDeployment](docs/sdks/deployments/README.md#startdeployment) - Start Deployment
+* [restartDeployment](docs/sdks/deployments/README.md#restartdeployment) - Restart Deployment
+* [listDeploymentWorkers](docs/sdks/deployments/README.md#listdeploymentworkers) - List Deployment Workers
+* [getDeploymentLogs](docs/sdks/deployments/README.md#getdeploymentlogs) - Get Deployment Logs
+* [streamDeploymentLogs](docs/sdks/deployments/README.md#streamdeploymentlogs) - Stream Deployment Logs
+
+#### [Workflows.Events](docs/sdks/workflowsevents/README.md)
+
+* [getStreamEvents](docs/sdks/workflowsevents/README.md#getstreamevents) - Get Stream Events
+* [getWorkflowEvents](docs/sdks/workflowsevents/README.md#getworkflowevents) - Get Workflow Events
+
+#### [Workflows.Executions](docs/sdks/executions/README.md)
+
+* [getWorkflowExecution](docs/sdks/executions/README.md#getworkflowexecution) - Get Workflow Execution
+* [getWorkflowExecutionHistory](docs/sdks/executions/README.md#getworkflowexecutionhistory) - Get Workflow Execution History
+* [signalWorkflowExecution](docs/sdks/executions/README.md#signalworkflowexecution) - Signal Workflow Execution
+* [queryWorkflowExecution](docs/sdks/executions/README.md#queryworkflowexecution) - Query Workflow Execution
+* [terminateWorkflowExecution](docs/sdks/executions/README.md#terminateworkflowexecution) - Terminate Workflow Execution
+* [batchTerminateWorkflowExecutions](docs/sdks/executions/README.md#batchterminateworkflowexecutions) - Batch Terminate Workflow Executions
+* [cancelWorkflowExecution](docs/sdks/executions/README.md#cancelworkflowexecution) - Cancel Workflow Execution
+* [batchCancelWorkflowExecutions](docs/sdks/executions/README.md#batchcancelworkflowexecutions) - Batch Cancel Workflow Executions
+* [resetWorkflow](docs/sdks/executions/README.md#resetworkflow) - Reset Workflow
+* [updateWorkflowExecution](docs/sdks/executions/README.md#updateworkflowexecution) - Update Workflow Execution
+* [getWorkflowExecutionTraceInfo](docs/sdks/executions/README.md#getworkflowexecutiontraceinfo) - Get Workflow Execution Trace Info
+* [getWorkflowExecutionTraceOtel](docs/sdks/executions/README.md#getworkflowexecutiontraceotel) - Get Workflow Execution Trace Otel
+* [getWorkflowExecutionTraceSummary](docs/sdks/executions/README.md#getworkflowexecutiontracesummary) - Get Workflow Execution Trace Summary
+* [getWorkflowExecutionTraceEvents](docs/sdks/executions/README.md#getworkflowexecutiontraceevents) - Get Workflow Execution Trace Events
+* [stream](docs/sdks/executions/README.md#stream) - Stream
+* [getWorkflowExecutionLogs](docs/sdks/executions/README.md#getworkflowexecutionlogs) - Get Workflow Execution Logs
+* [streamWorkflowExecutionLogs](docs/sdks/executions/README.md#streamworkflowexecutionlogs) - Stream Workflow Execution Logs
+
+#### [Workflows.Metrics](docs/sdks/metrics/README.md)
+
+* [getWorkflowMetrics](docs/sdks/metrics/README.md#getworkflowmetrics) - Get Workflow Metrics
+
+#### [Workflows.Runs](docs/sdks/runs/README.md)
+
+* [listRuns](docs/sdks/runs/README.md#listruns) - List Runs
+* [getRun](docs/sdks/runs/README.md#getrun) - Get Run
+* [getRunHistory](docs/sdks/runs/README.md#getrunhistory) - Get Run History
+
+#### [Workflows.Schedules](docs/sdks/schedules/README.md)
+
+* [getSchedules](docs/sdks/schedules/README.md#getschedules) - Get Schedules
+* [scheduleWorkflow](docs/sdks/schedules/README.md#scheduleworkflow) - Schedule Workflow
+* [getSchedule](docs/sdks/schedules/README.md#getschedule) - Get Schedule
+* [unscheduleWorkflow](docs/sdks/schedules/README.md#unscheduleworkflow) - Unschedule Workflow
+* [updateSchedule](docs/sdks/schedules/README.md#updateschedule) - Update Schedule
+* [pauseSchedule](docs/sdks/schedules/README.md#pauseschedule) - Pause Schedule
+* [resumeSchedule](docs/sdks/schedules/README.md#resumeschedule) - Resume Schedule
+* [triggerSchedule](docs/sdks/schedules/README.md#triggerschedule) - Trigger Schedule
+
+</details>
+<!-- End Available Resources and Operations [operations] -->
+
+<!-- Start Server-sent event streaming [eventstream] -->
+## Server-sent event streaming
+
+[Server-sent events][mdn-sse] are used to stream content from certain
+operations. These operations will expose the stream as an async iterable that
+can be consumed using a [`for await...of`][mdn-for-await-of] loop. The loop will
+terminate when the server no longer has any events to send and closes the
+underlying connection.
+
+```typescript
+import { Mistral } from "@mistralai/mistralai";
+
+const mistral = new Mistral({
+  apiKey: process.env["MISTRAL_API_KEY"] ?? "",
+});
+
+async function run() {
+  const result = await mistral.beta.conversations.startStream({
+    inputs: [
+      {
+        object: "entry",
+        type: "agent.handoff",
+        previousAgentId: "<id>",
+        previousAgentName: "<value>",
+        nextAgentId: "<id>",
+        nextAgentName: "<value>",
+      },
+    ],
+    completionArgs: {
+      responseFormat: {
+        type: "text",
+      },
+    },
+  });
+
+  for await (const event of result) {
+    console.log(event);
+  }
+}
+
+run();
+
+```
+
+[mdn-sse]: https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events
+[mdn-for-await-of]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/for-await...of
+<!-- End Server-sent event streaming [eventstream] -->
+
+<!-- Start Pagination [pagination] -->
+## Pagination
+
+Some of the endpoints in this SDK support pagination. To use pagination, you
+make your SDK calls as usual, but the returned response object will also be an
+async iterable that can be consumed using the [`for await...of`][for-await-of]
+syntax.
+
+[for-await-of]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/for-await...of
+
+Here's an example of one such pagination call:
+
+```typescript
+import { Mistral } from "@mistralai/mistralai";
+
+const mistral = new Mistral({
+  apiKey: process.env["MISTRAL_API_KEY"] ?? "",
+});
+
+async function run() {
+  const result = await mistral.beta.prompts.list();
+
+  for await (const page of result) {
+    console.log(page);
+  }
+}
+
+run();
+
+```
+<!-- End Pagination [pagination] -->
+
+<!-- Start File uploads [file-upload] -->
+## File uploads
+
+Certain SDK methods accept files as part of a multi-part request. It is possible and typically recommended to upload files as a stream rather than reading the entire contents into memory. This avoids excessive memory consumption and potentially crashing with out-of-memory errors when working with very large files. The following example demonstrates how to attach a file stream to a request.
+
+> [!TIP]
+>
+> Depending on your JavaScript runtime, there are convenient utilities that return a handle to a file without reading the entire contents into memory:
+>
+> - **Node.js v20+:** Since v20, Node.js comes with a native `openAsBlob` function in [`node:fs`](https://nodejs.org/docs/latest-v20.x/api/fs.html#fsopenasblobpath-options).
+> - **Bun:** The native [`Bun.file`](https://bun.sh/docs/api/file-io#reading-files-bun-file) function produces a file handle that can be used for streaming file uploads.
+> - **Browsers:** All supported browsers return an instance to a [`File`](https://developer.mozilla.org/en-US/docs/Web/API/File) when reading the value from an `<input type="file">` element.
+> - **Node.js v18:** A file stream can be created using the `fileFrom` helper from [`fetch-blob/from.js`](https://www.npmjs.com/package/fetch-blob).
+
+```typescript
+import { Mistral } from "@mistralai/mistralai";
+import { openAsBlob } from "node:fs";
+
+const mistral = new Mistral({
+  apiKey: process.env["MISTRAL_API_KEY"] ?? "",
+});
+
+async function run() {
+  const result = await mistral.beta.libraries.documents.upload({
+    libraryId: "a02150d9-5ee0-4877-b62c-28b1fcdf3b76",
+    requestBody: {
+      file: await openAsBlob("example.file"),
+    },
+  });
+
+  console.log(result);
+}
+
+run();
+
+```
+<!-- End File uploads [file-upload] -->
+
+<!-- Start Retries [retries] -->
+## Retries
+
+Some of the endpoints in this SDK support retries.  If you use the SDK without any configuration, it will fall back to the default retry strategy provided by the API.  However, the default retry strategy can be overridden on a per-operation basis, or across the entire SDK.
+
+To change the default retry strategy for a single API call, simply provide a retryConfig object to the call:
+```typescript
+import { Mistral } from "@mistralai/mistralai";
+
+const mistral = new Mistral({
+  apiKey: process.env["MISTRAL_API_KEY"] ?? "",
+});
+
+async function run() {
+  const result = await mistral.beta.prompts.list(undefined, {
+    retries: {
+      strategy: "backoff",
+      backoff: {
+        initialInterval: 1,
+        maxInterval: 50,
+        exponent: 1.1,
+        maxElapsedTime: 100,
+      },
+      retryConnectionErrors: false,
+    },
+  });
+
+  for await (const page of result) {
+    console.log(page);
+  }
+}
+
+run();
+
+```
+
+If you'd like to override the default retry strategy for all operations that support retries, you can provide a retryConfig at SDK initialization:
+```typescript
+import { Mistral } from "@mistralai/mistralai";
+
+const mistral = new Mistral({
+  retryConfig: {
+    strategy: "backoff",
+    backoff: {
+      initialInterval: 1,
+      maxInterval: 50,
+      exponent: 1.1,
+      maxElapsedTime: 100,
+    },
+    retryConnectionErrors: false,
+  },
+  apiKey: process.env["MISTRAL_API_KEY"] ?? "",
+});
+
+async function run() {
+  const result = await mistral.beta.prompts.list();
+
+  for await (const page of result) {
+    console.log(page);
+  }
+}
+
+run();
+
+```
+<!-- End Retries [retries] -->
+
+<!-- Start Error Handling [errors] -->
+## Error Handling
+
+[`MistralError`](./src/models/errors/mistralerror.ts) is the base class for all HTTP error responses. It has the following properties:
+
+| Property            | Type       | Description                                                                             |
+| ------------------- | ---------- | --------------------------------------------------------------------------------------- |
+| `error.message`     | `string`   | Error message                                                                           |
+| `error.statusCode`  | `number`   | HTTP response status code eg `404`                                                      |
+| `error.headers`     | `Headers`  | HTTP response headers                                                                   |
+| `error.body`        | `string`   | HTTP body. Can be empty string if no body is returned.                                  |
+| `error.rawResponse` | `Response` | Raw HTTP response                                                                       |
+| `error.data$`       |            | Optional. Some errors may contain structured data. [See Error Classes](#error-classes). |
+
+### Example
+```typescript
+import { Mistral } from "@mistralai/mistralai";
+import * as errors from "@mistralai/mistralai/models/errors";
+
+const mistral = new Mistral({
+  apiKey: process.env["MISTRAL_API_KEY"] ?? "",
+});
+
+async function run() {
+  try {
+    const result = await mistral.beta.serviceAccounts.create({
+      name: "<value>",
+      workspaceId: "cf2146d0-158c-4b19-b8b1-ca0c68f41143",
+    });
+
+    console.log(result);
+  } catch (error) {
+    // The base class for HTTP error responses
+    if (error instanceof errors.MistralError) {
+      console.log(error.message);
+      console.log(error.statusCode);
+      console.log(error.body);
+      console.log(error.headers);
+
+      // Depending on the method different errors may be thrown
+      if (error instanceof errors.HTTPValidationError) {
+        console.log(error.data$.detail); // ValidationError[]
+      }
+    }
+  }
+}
+
+run();
+
+```
+
+### Error Classes
+**Primary error:**
+* [`MistralError`](./src/models/errors/mistralerror.ts): The base class for HTTP error responses.
+
+<details><summary>Less common errors (8)</summary>
+
+<br />
+
+**Network errors:**
+* [`ConnectionError`](./src/models/errors/httpclienterrors.ts): HTTP client was unable to make a request to a server.
+* [`RequestTimeoutError`](./src/models/errors/httpclienterrors.ts): HTTP request timed out due to an AbortSignal signal.
+* [`RequestAbortedError`](./src/models/errors/httpclienterrors.ts): HTTP request was aborted by the client.
+* [`InvalidRequestError`](./src/models/errors/httpclienterrors.ts): Any input used to create a request is invalid.
+* [`UnexpectedClientError`](./src/models/errors/httpclienterrors.ts): Unrecognised or unexpected error.
+
+
+**Inherit from [`MistralError`](./src/models/errors/mistralerror.ts)**:
+* [`HTTPValidationError`](./src/models/errors/httpvalidationerror.ts): Validation Error. Status code `422`. Applicable to 155 of 245 methods.*
+* [`ObservabilityError`](./src/models/errors/observabilityerror.ts): Bad Request - Invalid request parameters or data. Applicable to 48 of 245 methods.*
+* [`ResponseValidationError`](./src/models/errors/responsevalidationerror.ts): Type mismatch between the data returned from the server and the structure expected by the SDK. See `error.rawValue` for the raw value and `error.pretty()` for a nicely formatted multi-line string.
+
+</details>
+
+\* Check [the method documentation](#available-resources-and-operations) to see if the error is applicable.
+<!-- End Error Handling [errors] -->
+
+<!-- Start Server Selection [server] -->
+## Server Selection
+
+### Select Server by Name
+
+You can override the default server globally by passing a server name to the `server: keyof typeof ServerList` optional parameter when initializing the SDK client instance. The selected server will then be used as the default on the operations that use it. This table lists the names associated with the available servers:
+
+| Name     | Server                      | Description              |
+| -------- | --------------------------- | ------------------------ |
+| `global` | `https://api.mistral.ai`    | Global Production server |
+| `eu`     | `https://api.eu.mistral.ai` | EU Production server     |
+| `us`     | `https://api.us.mistral.ai` | US Production server     |
+
+#### Example
+
+```typescript
+import { Mistral } from "@mistralai/mistralai";
+
+const mistral = new Mistral({
+  server: "global",
+  apiKey: process.env["MISTRAL_API_KEY"] ?? "",
+});
+
+async function run() {
+  const result = await mistral.beta.prompts.list();
+
+  for await (const page of result) {
+    console.log(page);
+  }
+}
+
+run();
+
+```
+
+### Override Server URL Per-Client
+
+The default server can also be overridden globally by passing a URL to the `serverURL: string` optional parameter when initializing the SDK client instance. For example:
+```typescript
+import { Mistral } from "@mistralai/mistralai";
+
+const mistral = new Mistral({
+  serverURL: "https://api.mistral.ai",
+  apiKey: process.env["MISTRAL_API_KEY"] ?? "",
+});
+
+async function run() {
+  const result = await mistral.beta.prompts.list();
+
+  for await (const page of result) {
+    console.log(page);
+  }
+}
+
+run();
+
+```
+<!-- End Server Selection [server] -->
+
+<!-- Start Custom HTTP Client [http-client] -->
+## Custom HTTP Client
+
+The TypeScript SDK makes API calls using an `HTTPClient` that wraps the native
+[Fetch API](https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API). This
+client is a thin wrapper around `fetch` and provides the ability to attach hooks
+around the request lifecycle that can be used to modify the request or handle
+errors and response.
+
+The `HTTPClient` constructor takes an optional `fetcher` argument that can be
+used to integrate a third-party HTTP client or when writing tests to mock out
+the HTTP client and feed in fixtures.
+
+The following example shows how to:
+- route requests through a proxy server using [undici](https://www.npmjs.com/package/undici)'s ProxyAgent
+- use the `"beforeRequest"` hook to add a custom header and a timeout to requests
+- use the `"requestError"` hook to log errors
+
+```typescript
+import { Mistral } from "@mistralai/mistralai";
+import { ProxyAgent } from "undici";
+import { HTTPClient } from "@mistralai/mistralai/lib/http";
+
+const dispatcher = new ProxyAgent("http://proxy.example.com:8080");
+
+const httpClient = new HTTPClient({
+  // 'fetcher' takes a function that has the same signature as native 'fetch'.
+  fetcher: (input, init) =>
+    // 'dispatcher' is specific to undici and not part of the standard Fetch API.
+    fetch(input, { ...init, dispatcher } as RequestInit),
+});
+
+httpClient.addHook("beforeRequest", (request) => {
+  const nextRequest = new Request(request, {
+    signal: request.signal || AbortSignal.timeout(5000)
+  });
+
+  nextRequest.headers.set("x-custom-header", "custom value");
+
+  return nextRequest;
+});
+
+httpClient.addHook("requestError", (error, request) => {
+  console.group("Request Error");
+  console.log("Reason:", `${error}`);
+  console.log("Endpoint:", `${request.method} ${request.url}`);
+  console.groupEnd();
+});
+
+const sdk = new Mistral({ httpClient: httpClient });
+```
+<!-- End Custom HTTP Client [http-client] -->
+
+<!-- Start Authentication [security] -->
+## Authentication
+
+### Per-Client Security Schemes
+
+This SDK supports the following security scheme globally:
+
+| Name     | Type | Scheme      | Environment Variable |
+| -------- | ---- | ----------- | -------------------- |
+| `apiKey` | http | HTTP Bearer | `MISTRAL_API_KEY`    |
+
+To authenticate with the API the `apiKey` parameter must be set when initializing the SDK client instance. For example:
+```typescript
+import { Mistral } from "@mistralai/mistralai";
+
+const mistral = new Mistral({
+  apiKey: process.env["MISTRAL_API_KEY"] ?? "",
+});
+
+async function run() {
+  const result = await mistral.beta.prompts.list();
+
+  for await (const page of result) {
+    console.log(page);
+  }
+}
+
+run();
+
+```
+
+### Per-Operation Security Schemes
+
+Some operations in this SDK require the security scheme to be specified at the request level. For example:
+```typescript
+import { Mistral } from "@mistralai/mistralai";
+
+const mistral = new Mistral();
+
+async function run() {
+  const result = await mistral.beta.users.getIdentity({
+    dashboardUserContextAuth: process.env["MISTRAL_DASHBOARD_USER_CONTEXT_AUTH"]
+      ?? "",
+  });
+
+  console.log(result);
+}
+
+run();
+
+```
+<!-- End Authentication [security] -->
+
+
+<!-- Start Standalone functions [standalone-funcs] -->
+## Standalone functions
+
+All the methods listed above are available as standalone functions. These
+functions are ideal for use in applications running in the browser, serverless
+runtimes or other environments where application bundle size is a primary
+concern. When using a bundler to build your application, all unused
+functionality will be either excluded from the final bundle or tree-shaken away.
+
+To read more about standalone functions, check [FUNCTIONS.md](./FUNCTIONS.md).
+
+<details>
+
+<summary>Available standalone functions</summary>
+
+- [`agentsComplete`](docs/sdks/agents/README.md#complete) - Agents Completion
+- [`agentsStream`](docs/sdks/agents/README.md#stream) - Stream Agents completion
+- [`audioSpeechComplete`](docs/sdks/speech/README.md#complete) - Speech
+- [`audioTranscriptionsComplete`](docs/sdks/transcriptions/README.md#complete) - Create Transcription
+- [`audioTranscriptionsStream`](docs/sdks/transcriptions/README.md#stream) - Create Streaming Transcription (SSE)
+- [`audioVoicesCreate`](docs/sdks/voices/README.md#create) - Create a new voice
+- [`audioVoicesDelete`](docs/sdks/voices/README.md#delete) - Delete a custom voice
+- [`audioVoicesGet`](docs/sdks/voices/README.md#get) - Get voice details
+- [`audioVoicesGetSampleAudio`](docs/sdks/voices/README.md#getsampleaudio) - Get voice sample audio
+- [`audioVoicesUpdate`](docs/sdks/voices/README.md#update) - Update voice metadata
+- [`batchJobsCancel`](docs/sdks/jobs/README.md#cancel) - Cancel Batch Job
+- [`batchJobsCreate`](docs/sdks/jobs/README.md#create) - Create Batch Job
+- [`batchJobsDelete`](docs/sdks/jobs/README.md#delete) - Delete Batch Job
+- [`batchJobsGet`](docs/sdks/jobs/README.md#get) - Get Batch Job
+- [`batchJobsList`](docs/sdks/jobs/README.md#list) - Get Batch Jobs
+- [`betaAgentsCreate`](docs/sdks/betaagents/README.md#create) - Create a agent that can be used within a conversation.
+- [`betaAgentsCreateVersionAlias`](docs/sdks/betaagents/README.md#createversionalias) - Create or update an agent version alias.
+- [`betaAgentsDelete`](docs/sdks/betaagents/README.md#delete) - Delete an agent entity.
+- [`betaAgentsDeleteVersionAlias`](docs/sdks/betaagents/README.md#deleteversionalias) - Delete an agent version alias.
+- [`betaAgentsGet`](docs/sdks/betaagents/README.md#get) - Retrieve an agent entity.
+- [`betaAgentsGetVersion`](docs/sdks/betaagents/README.md#getversion) - Retrieve a specific version of an agent.
+- [`betaAgentsListPages`](docs/sdks/betaagents/README.md#listpages) - List agent entities, cursor-paginated.
+- [`betaAgentsListVersionAliases`](docs/sdks/betaagents/README.md#listversionaliases) - List all aliases for an agent.
+- [`betaAgentsListVersions`](docs/sdks/betaagents/README.md#listversions) - List all versions of an agent.
+- [`betaAgentsUpdate`](docs/sdks/betaagents/README.md#update) - Update an agent entity.
+- [`betaAgentsUpdateVersion`](docs/sdks/betaagents/README.md#updateversion) - Update an agent version.
+- [`betaConnectorsActivateForConsumer`](docs/sdks/connectors/README.md#activateforconsumer) - Activate a connector for the given consumer (organization, workspace, user).
+- [`betaConnectorsCallTool`](docs/sdks/connectors/README.md#calltool) - Call Connector Tool
+- [`betaConnectorsCreate`](docs/sdks/connectors/README.md#create) - Create a new connector.
+- [`betaConnectorsCreateCredentials`](docs/sdks/connectors/README.md#createcredentials) - Create consumer credentials for a connector.
+- [`betaConnectorsDeactivateForConsumer`](docs/sdks/connectors/README.md#deactivateforconsumer) - Deactivate a connector for the current consumer (at organization, workspace or user level).
+- [`betaConnectorsDelete`](docs/sdks/connectors/README.md#delete) - Delete a connector.
+- [`betaConnectorsDeleteAllUserCredentials`](docs/sdks/connectors/README.md#deleteallusercredentials) - Delete all user credentials for a connector.
+- [`betaConnectorsDeleteOrganizationCredentials`](docs/sdks/connectors/README.md#deleteorganizationcredentials) - Delete organization credentials for a connector.
+- [`betaConnectorsDeleteUserCredentials`](docs/sdks/connectors/README.md#deleteusercredentials) - Delete user credentials for a connector.
+- [`betaConnectorsDeleteWorkspaceCredentials`](docs/sdks/connectors/README.md#deleteworkspacecredentials) - Delete workspace credentials for a connector.
+- [`betaConnectorsGet`](docs/sdks/connectors/README.md#get) - Get a connector.
+- [`betaConnectorsGetAuthenticationMethods`](docs/sdks/connectors/README.md#getauthenticationmethods) - Get authentication methods for a connector.
+- [`betaConnectorsGetAuthUrl`](docs/sdks/connectors/README.md#getauthurl) - Get the auth URL for a connector.
+- [`betaConnectorsList`](docs/sdks/connectors/README.md#list) - List all connectors.
+- [`betaConnectorsListOrganizationCredentials`](docs/sdks/connectors/README.md#listorganizationcredentials) - List organization credentials for a connector.
+- [`betaConnectorsListTools`](docs/sdks/connectors/README.md#listtools) - List tools for a connector.
+- [`betaConnectorsListUserCredentials`](docs/sdks/connectors/README.md#listusercredentials) - List user credentials for a connector.
+- [`betaConnectorsListWorkspaceCredentials`](docs/sdks/connectors/README.md#listworkspacecredentials) - List workspace credentials for a connector.
+- [`betaConnectorsShare`](docs/sdks/connectors/README.md#share) - Share a private connector to the current workspace.
+- [`betaConnectorsShareToOrganization`](docs/sdks/connectors/README.md#sharetoorganization) - Share a connector to the current organization.
+- [`betaConnectorsUnshare`](docs/sdks/connectors/README.md#unshare) - Unshare a connector from the current workspace.
+- [`betaConnectorsUnshareFromOrganization`](docs/sdks/connectors/README.md#unsharefromorganization) - Unshare a connector from the current organization.
+- [`betaConnectorsUpdate`](docs/sdks/connectors/README.md#update) - Update a connector.
+- [`betaConnectorsUpdateCredentials`](docs/sdks/connectors/README.md#updatecredentials) - Create or update consumer credentials for a connector.
+- [`betaConversationsAppend`](docs/sdks/conversations/README.md#append) - Append new entries to an existing conversation.
+- [`betaConversationsAppendStream`](docs/sdks/conversations/README.md#appendstream) - Append new entries to an existing conversation.
+- [`betaConversationsDelete`](docs/sdks/conversations/README.md#delete) - Delete a conversation.
+- [`betaConversationsGet`](docs/sdks/conversations/README.md#get) - Retrieve a conversation information.
+- [`betaConversationsGetHistory`](docs/sdks/conversations/README.md#gethistory) - Retrieve all entries in a conversation.
+- [`betaConversationsGetMessages`](docs/sdks/conversations/README.md#getmessages) - Retrieve all messages in a conversation.
+- [`betaConversationsList`](docs/sdks/conversations/README.md#list) - List all created conversations.
+- [`betaConversationsRestart`](docs/sdks/conversations/README.md#restart) - Restart a conversation starting from a given entry.
+- [`betaConversationsRestartStream`](docs/sdks/conversations/README.md#restartstream) - Restart a conversation starting from a given entry.
+- [`betaConversationsStart`](docs/sdks/conversations/README.md#start) - Create a conversation and append entries to it.
+- [`betaConversationsStartStream`](docs/sdks/conversations/README.md#startstream) - Create a conversation and append entries to it.
+- [`betaLibrariesAccessesDelete`](docs/sdks/accesses/README.md#delete) - Delete an access level.
+- [`betaLibrariesAccessesList`](docs/sdks/accesses/README.md#list) - List all of the access to this library.
+- [`betaLibrariesAccessesUpdateOrCreate`](docs/sdks/accesses/README.md#updateorcreate) - Create or update an access level.
+- [`betaLibrariesCreate`](docs/sdks/libraries/README.md#create) - Create a new Library.
+- [`betaLibrariesDelete`](docs/sdks/libraries/README.md#delete) - Delete a library and all of it's document.
+- [`betaLibrariesDocumentsDelete`](docs/sdks/documents/README.md#delete) - Delete a document.
+- [`betaLibrariesDocumentsExtractedTextSignedUrl`](docs/sdks/documents/README.md#extractedtextsignedurl) - Retrieve the signed URL of text extracted from a given document.
+- [`betaLibrariesDocumentsGet`](docs/sdks/documents/README.md#get) - Retrieve the metadata of a specific document.
+- [`betaLibrariesDocumentsGetSignedUrl`](docs/sdks/documents/README.md#getsignedurl) - Retrieve the signed URL of a specific document.
+- [`betaLibrariesDocumentsList`](docs/sdks/documents/README.md#list) - List documents in a given library.
+- [`betaLibrariesDocumentsReprocess`](docs/sdks/documents/README.md#reprocess) - Reprocess a document.
+- [`betaLibrariesDocumentsStatus`](docs/sdks/documents/README.md#status) - Retrieve the processing status of a specific document.
+- [`betaLibrariesDocumentsTextContent`](docs/sdks/documents/README.md#textcontent) - Retrieve the text content of a specific document.
+- [`betaLibrariesDocumentsUpdate`](docs/sdks/documents/README.md#update) - Update the metadata of a specific document.
+- [`betaLibrariesDocumentsUpload`](docs/sdks/documents/README.md#upload) - Upload a new document.
+- [`betaLibrariesGet`](docs/sdks/libraries/README.md#get) - Detailed information about a specific Library.
+- [`betaLibrariesList`](docs/sdks/libraries/README.md#list) - List all libraries you have access to.
+- [`betaLibrariesUpdate`](docs/sdks/libraries/README.md#update) - Update a library.
+- [`betaObservabilityDatasetsCreate`](docs/sdks/datasets/README.md#create) - Create a new empty dataset
+- [`betaObservabilityDatasetsCreateRecord`](docs/sdks/datasets/README.md#createrecord) - Add a record to the dataset
+- [`betaObservabilityDatasetsDelete`](docs/sdks/datasets/README.md#delete) - Delete a dataset
+- [`betaObservabilityDatasetsExportToJsonl`](docs/sdks/datasets/README.md#exporttojsonl) - Export to the Files API and retrieve presigned URL to download the resulting JSONL file
+- [`betaObservabilityDatasetsFetch`](docs/sdks/datasets/README.md#fetch) - Get dataset by id
+- [`betaObservabilityDatasetsFetchTask`](docs/sdks/datasets/README.md#fetchtask) - Get status of a dataset import task
+- [`betaObservabilityDatasetsImportFromDatasetRecords`](docs/sdks/datasets/README.md#importfromdatasetrecords) - Populate the dataset with records from another dataset
+- [`betaObservabilityDatasetsImportFromFile`](docs/sdks/datasets/README.md#importfromfile) - Populate the dataset with records from an uploaded file
+- [`betaObservabilityDatasetsImportFromPlayground`](docs/sdks/datasets/README.md#importfromplayground) - Populate the dataset with records from playground conversations
+- [`betaObservabilityDatasetsList`](docs/sdks/datasets/README.md#list) - List existing datasets
+- [`betaObservabilityDatasetsListRecords`](docs/sdks/datasets/README.md#listrecords) - List existing records in the dataset
+- [`betaObservabilityDatasetsListTasks`](docs/sdks/datasets/README.md#listtasks) - List import tasks for the given dataset
+- [`betaObservabilityDatasetsRecordsBulkDelete`](docs/sdks/records/README.md#bulkdelete) - Delete multiple records from datasets
+- [`betaObservabilityDatasetsRecordsDelete`](docs/sdks/records/README.md#delete) - Delete a record from a dataset
+- [`betaObservabilityDatasetsRecordsFetch`](docs/sdks/records/README.md#fetch) - Get the content of a given dataset record
+- [`betaObservabilityDatasetsRecordsJudge`](docs/sdks/records/README.md#judge) - Run Judge on a dataset record based on the given options
+- [`betaObservabilityDatasetsRecordsUpdatePayload`](docs/sdks/records/README.md#updatepayload) - Update a dataset record payload
+- [`betaObservabilityDatasetsRecordsUpdateProperties`](docs/sdks/records/README.md#updateproperties) - Update dataset record properties
+- [`betaObservabilityDatasetsUpdate`](docs/sdks/datasets/README.md#update) - Patch dataset
+- [`betaObservabilityEvaluationsCreatePipelineConfig`](docs/sdks/evaluations/README.md#createpipelineconfig) - Create a worker pipeline configuration
+- [`betaObservabilityEvaluationsDeletePipelineConfig`](docs/sdks/evaluations/README.md#deletepipelineconfig) - Delete a worker pipeline configuration
+- [`betaObservabilityEvaluationsGetPipelineConfig`](docs/sdks/evaluations/README.md#getpipelineconfig) - Get a worker pipeline configuration
+- [`betaObservabilityEvaluationsListPipelineConfigs`](docs/sdks/evaluations/README.md#listpipelineconfigs) - List worker pipeline configurations
+- [`betaObservabilityEvaluationsUpdatePipelineConfig`](docs/sdks/evaluations/README.md#updatepipelineconfig) - Replace a worker pipeline configuration
+- [`betaObservabilityJudgesCreate`](docs/sdks/judges/README.md#create) - Create a new judge
+- [`betaObservabilityJudgesDelete`](docs/sdks/judges/README.md#delete) - Delete a judge
+- [`betaObservabilityJudgesFetch`](docs/sdks/judges/README.md#fetch) - Get judge by id
+- [`betaObservabilityJudgesJudgeConversation`](docs/sdks/judges/README.md#judgeconversation) - Run a saved judge on a conversation
+- [`betaObservabilityJudgesList`](docs/sdks/judges/README.md#list) - Get judges with optional filtering and search
+- [`betaObservabilityJudgesUpdate`](docs/sdks/judges/README.md#update) - Update a judge
+- [`betaObservabilityLogsFetchOptions`](docs/sdks/logs/README.md#fetchoptions) - Get options for a log field
+- [`betaObservabilityLogsList`](docs/sdks/logs/README.md#list) - Get log field definitions
+- [`betaObservabilityLogsSearch`](docs/sdks/logs/README.md#search) - Search logs
+- [`betaObservabilitySpansAggregate`](docs/sdks/spans/README.md#aggregate) - Aggregate spans
+- [`betaObservabilitySpansFetchSpanEvalFieldOptions`](docs/sdks/spans/README.md#fetchspanevalfieldoptions) - Get options for a span evaluation field
+- [`betaObservabilitySpansFetchSpanFieldOptions`](docs/sdks/spans/README.md#fetchspanfieldoptions) - Get options for a span field
+- [`betaObservabilitySpansListSpanEvalFields`](docs/sdks/spans/README.md#listspanevalfields) - Get span evaluation field definitions
+- [`betaObservabilitySpansListSpanFields`](docs/sdks/spans/README.md#listspanfields) - Get span field definitions
+- [`betaObservabilitySpansSearchLatestSpanEvaluations`](docs/sdks/spans/README.md#searchlatestspanevaluations) - Search latest span evaluations
+- [`betaObservabilitySpansSearchSpanEvaluations`](docs/sdks/spans/README.md#searchspanevaluations) - Search span evaluations
+- [`betaObservabilitySpansSearchSpans`](docs/sdks/spans/README.md#searchspans) - Search spans
+- [`betaObservabilityTracesAggregate`](docs/sdks/traces/README.md#aggregate) - Aggregate traces
+- [`betaObservabilityTracesFetchOptions`](docs/sdks/traces/README.md#fetchoptions) - Get options for a trace field
+- [`betaObservabilityTracesGetSpanById`](docs/sdks/traces/README.md#getspanbyid) - Get span by id
+- [`betaObservabilityTracesGetTraceById`](docs/sdks/traces/README.md#gettracebyid) - Get trace by id
+- [`betaObservabilityTracesGetTraceFields`](docs/sdks/traces/README.md#gettracefields) - Get trace field definitions
+- [`betaObservabilityTracesGetTraceSpans`](docs/sdks/traces/README.md#gettracespans) - Get trace spans
+- [`betaObservabilityTracesSearch`](docs/sdks/traces/README.md#search) - Search traces
+- [`betaPromptsCreate`](docs/sdks/prompts/README.md#create) - CreatePrompt
+- [`betaPromptsCreateVersion`](docs/sdks/prompts/README.md#createversion) - CreatePromptVersion
+- [`betaPromptsDelete`](docs/sdks/prompts/README.md#delete) - DeletePrompt
+- [`betaPromptsGet`](docs/sdks/prompts/README.md#get) - GetPrompt
+- [`betaPromptsGetVersion`](docs/sdks/prompts/README.md#getversion) - GetPromptVersion
+- [`betaPromptsList`](docs/sdks/prompts/README.md#list) - ListPrompts
+- [`betaPromptsListVersions`](docs/sdks/prompts/README.md#listversions) - ListPromptVersions
+- [`betaPromptsUpdateMetadata`](docs/sdks/prompts/README.md#updatemetadata) - UpdatePrompt
+- [`betaPromptsUpdateVersionMetadata`](docs/sdks/prompts/README.md#updateversionmetadata) - UpdatePromptVersionMetadata
+- [`betaRagIngestionPipelineConfigurationsList`](docs/sdks/ingestionpipelineconfigurations/README.md#list) - List ingestion pipeline configurations
+- [`betaRagIngestionPipelineConfigurationsRegister`](docs/sdks/ingestionpipelineconfigurations/README.md#register) - Register Config
+- [`betaRagIngestionPipelineConfigurationsUpdateRunInfo`](docs/sdks/ingestionpipelineconfigurations/README.md#updateruninfo) - Update Run Info
+- [`betaRagSearchIndexesGetDeploymentSummaries`](docs/sdks/searchindexes/README.md#getdeploymentsummaries) - Get Deployment Summaries
+- [`betaRagSearchIndexesRegisterDeployment`](docs/sdks/searchindexes/README.md#registerdeployment) - Register (or re-register) a search index
+- [`betaRagSearchIndexesUnregisterDeployment`](docs/sdks/searchindexes/README.md#unregisterdeployment) - Unregister Deployment
+- [`betaRagSearchIndexesUpdateIndexMetrics`](docs/sdks/searchindexes/README.md#updateindexmetrics) - Update Index Metrics
+- [`betaServiceAccountsCreate`](docs/sdks/serviceaccounts/README.md#create) - Create Service Account
+- [`betaServiceAccountsDelete`](docs/sdks/serviceaccounts/README.md#delete) - Delete Service Account
+- [`betaServiceAccountsGet`](docs/sdks/serviceaccounts/README.md#get) - Get Service Account
+- [`betaServiceAccountsList`](docs/sdks/serviceaccounts/README.md#list) - List Service Accounts
+- [`betaServiceAccountsListAssignableRoles`](docs/sdks/serviceaccounts/README.md#listassignableroles) - List Assignable Service Account Roles
+- [`betaServiceAccountsListRoles`](docs/sdks/serviceaccounts/README.md#listroles) - List Service Account Roles
+- [`betaServiceAccountsSetRoles`](docs/sdks/serviceaccounts/README.md#setroles) - Set Service Account Roles
+- [`betaServiceAccountsUpdate`](docs/sdks/serviceaccounts/README.md#update) - Update Service Account
+- [`betaSkillsCreate`](docs/sdks/skills/README.md#create) - CreateSkill
+- [`betaSkillsCreateVersion`](docs/sdks/skills/README.md#createversion) - CreateSkillVersion
+- [`betaSkillsDelete`](docs/sdks/skills/README.md#delete) - DeleteSkill
+- [`betaSkillsGet`](docs/sdks/skills/README.md#get) - GetSkill
+- [`betaSkillsGetVersion`](docs/sdks/skills/README.md#getversion) - GetSkillVersion
+- [`betaSkillsList`](docs/sdks/skills/README.md#list) - ListSkills
+- [`betaSkillsListVersions`](docs/sdks/skills/README.md#listversions) - ListSkillVersions
+- [`betaSkillsUpdateMetadata`](docs/sdks/skills/README.md#updatemetadata) - UpdateSkill
+- [`betaSkillsUpdateVersionMetadata`](docs/sdks/skills/README.md#updateversionmetadata) - UpdateSkillVersionMetadata
+- [`betaUsersGetIdentity`](docs/sdks/users/README.md#getidentity) - Get Identity
+- [`betaUsersListOrganizations`](docs/sdks/users/README.md#listorganizations) - List Organizations
+- [`betaUsersListWorkspaces`](docs/sdks/users/README.md#listworkspaces) - List Workspaces
+- [`chatComplete`](docs/sdks/chat/README.md#complete) - Chat Completion
+- [`chatStream`](docs/sdks/chat/README.md#stream) - Stream chat completion
+- [`classifiersClassify`](docs/sdks/classifiers/README.md#classify) - Classifications
+- [`classifiersClassifyChat`](docs/sdks/classifiers/README.md#classifychat) - Chat Classifications
+- [`classifiersModerate`](docs/sdks/classifiers/README.md#moderate) - Moderations
+- [`classifiersModerateChat`](docs/sdks/classifiers/README.md#moderatechat) - Chat Moderations
+- [`embeddingsCreate`](docs/sdks/embeddings/README.md#create) - Embeddings
+- [`eventsGetStreamEvents`](docs/sdks/events/README.md#getstreamevents) - Get Stream Events
+- [`eventsGetStreamEvents`](docs/sdks/workflowsevents/README.md#getstreamevents) - Get Stream Events
+- [`eventsGetWorkflowEvents`](docs/sdks/events/README.md#getworkflowevents) - Get Workflow Events
+- [`eventsGetWorkflowEvents`](docs/sdks/workflowsevents/README.md#getworkflowevents) - Get Workflow Events
+- [`filesDelete`](docs/sdks/files/README.md#delete) - Delete File
+- [`filesDownload`](docs/sdks/files/README.md#download) - Download File
+- [`filesGetSignedUrl`](docs/sdks/files/README.md#getsignedurl) - Get Signed Url
+- [`filesList`](docs/sdks/files/README.md#list) - List Files
+- [`filesRetrieve`](docs/sdks/files/README.md#retrieve) - Retrieve File
+- [`filesUpload`](docs/sdks/files/README.md#upload) - Upload File
+- [`fimComplete`](docs/sdks/fim/README.md#complete) - Fim Completion
+- [`fimStream`](docs/sdks/fim/README.md#stream) - Stream fim completion
+- [`modelsArchive`](docs/sdks/models/README.md#archive) - Archive Fine Tuned Model
+- [`modelsDelete`](docs/sdks/models/README.md#delete) - Delete Model
+- [`modelsList`](docs/sdks/models/README.md#list) - List Models
+- [`modelsRetrieve`](docs/sdks/models/README.md#retrieve) - Retrieve Model
+- [`modelsUnarchive`](docs/sdks/models/README.md#unarchive) - Unarchive Fine Tuned Model
+- [`modelsUpdate`](docs/sdks/models/README.md#update) - Update Fine Tuned Model
+- [`ocrProcess`](docs/sdks/ocr/README.md#process) - OCR
+- [`realtimeSessionsCreate`](docs/sdks/sessions/README.md#create) - Create Client Session
+- [`workflowsArchiveWorkflow`](docs/sdks/workflows/README.md#archiveworkflow) - Archive Workflow
+- [`workflowsBulkArchiveWorkflows`](docs/sdks/workflows/README.md#bulkarchiveworkflows) - Bulk Archive Workflows
+- [`workflowsBulkUnarchiveWorkflows`](docs/sdks/workflows/README.md#bulkunarchiveworkflows) - Bulk Unarchive Workflows
+- [`workflowsDeploymentsCreateDeployment`](docs/sdks/deployments/README.md#createdeployment) - Create Deployment
+- [`workflowsDeploymentsDeleteDeployment`](docs/sdks/deployments/README.md#deletedeployment) - Delete Deployment
+- [`workflowsDeploymentsGetDeployment`](docs/sdks/deployments/README.md#getdeployment) - Get Deployment
+- [`workflowsDeploymentsGetDeploymentLogs`](docs/sdks/deployments/README.md#getdeploymentlogs) - Get Deployment Logs
+- [`workflowsDeploymentsListDeployments`](docs/sdks/deployments/README.md#listdeployments) - List Deployments
+- [`workflowsDeploymentsListDeploymentWorkers`](docs/sdks/deployments/README.md#listdeploymentworkers) - List Deployment Workers
+- [`workflowsDeploymentsRestartDeployment`](docs/sdks/deployments/README.md#restartdeployment) - Restart Deployment
+- [`workflowsDeploymentsStartDeployment`](docs/sdks/deployments/README.md#startdeployment) - Start Deployment
+- [`workflowsDeploymentsStopDeployment`](docs/sdks/deployments/README.md#stopdeployment) - Stop Deployment
+- [`workflowsDeploymentsStreamDeploymentLogs`](docs/sdks/deployments/README.md#streamdeploymentlogs) - Stream Deployment Logs
+- [`workflowsDeploymentsUpdateDeployment`](docs/sdks/deployments/README.md#updatedeployment) - Update Deployment
+- [`workflowsExecuteWorkflow`](docs/sdks/workflows/README.md#executeworkflow) - Execute Workflow
+- [`workflowsExecutionsBatchCancelWorkflowExecutions`](docs/sdks/executions/README.md#batchcancelworkflowexecutions) - Batch Cancel Workflow Executions
+- [`workflowsExecutionsBatchTerminateWorkflowExecutions`](docs/sdks/executions/README.md#batchterminateworkflowexecutions) - Batch Terminate Workflow Executions
+- [`workflowsExecutionsCancelWorkflowExecution`](docs/sdks/executions/README.md#cancelworkflowexecution) - Cancel Workflow Execution
+- [`workflowsExecutionsGetWorkflowExecution`](docs/sdks/executions/README.md#getworkflowexecution) - Get Workflow Execution
+- [`workflowsExecutionsGetWorkflowExecutionHistory`](docs/sdks/executions/README.md#getworkflowexecutionhistory) - Get Workflow Execution History
+- [`workflowsExecutionsGetWorkflowExecutionLogs`](docs/sdks/executions/README.md#getworkflowexecutionlogs) - Get Workflow Execution Logs
+- [`workflowsExecutionsGetWorkflowExecutionTraceEvents`](docs/sdks/executions/README.md#getworkflowexecutiontraceevents) - Get Workflow Execution Trace Events
+- [`workflowsExecutionsGetWorkflowExecutionTraceInfo`](docs/sdks/executions/README.md#getworkflowexecutiontraceinfo) - Get Workflow Execution Trace Info
+- [`workflowsExecutionsGetWorkflowExecutionTraceOtel`](docs/sdks/executions/README.md#getworkflowexecutiontraceotel) - Get Workflow Execution Trace Otel
+- [`workflowsExecutionsGetWorkflowExecutionTraceSummary`](docs/sdks/executions/README.md#getworkflowexecutiontracesummary) - Get Workflow Execution Trace Summary
+- [`workflowsExecutionsQueryWorkflowExecution`](docs/sdks/executions/README.md#queryworkflowexecution) - Query Workflow Execution
+- [`workflowsExecutionsResetWorkflow`](docs/sdks/executions/README.md#resetworkflow) - Reset Workflow
+- [`workflowsExecutionsSignalWorkflowExecution`](docs/sdks/executions/README.md#signalworkflowexecution) - Signal Workflow Execution
+- [`workflowsExecutionsStream`](docs/sdks/executions/README.md#stream) - Stream
+- [`workflowsExecutionsStreamWorkflowExecutionLogs`](docs/sdks/executions/README.md#streamworkflowexecutionlogs) - Stream Workflow Execution Logs
+- [`workflowsExecutionsTerminateWorkflowExecution`](docs/sdks/executions/README.md#terminateworkflowexecution) - Terminate Workflow Execution
+- [`workflowsExecutionsUpdateWorkflowExecution`](docs/sdks/executions/README.md#updateworkflowexecution) - Update Workflow Execution
+- [`workflowsGetWorkflow`](docs/sdks/workflows/README.md#getworkflow) - Get Workflow
+- [`workflowsGetWorkflowRegistration`](docs/sdks/workflows/README.md#getworkflowregistration) - Get Workflow Registration
+- [`workflowsGetWorkflowRegistrations`](docs/sdks/workflows/README.md#getworkflowregistrations) - Get Workflow Registrations
+- [`workflowsGetWorkflows`](docs/sdks/workflows/README.md#getworkflows) - Get Workflows
+- [`workflowsMetricsGetWorkflowMetrics`](docs/sdks/metrics/README.md#getworkflowmetrics) - Get Workflow Metrics
+- [`workflowsRunsGetRun`](docs/sdks/runs/README.md#getrun) - Get Run
+- [`workflowsRunsGetRunHistory`](docs/sdks/runs/README.md#getrunhistory) - Get Run History
+- [`workflowsRunsListRuns`](docs/sdks/runs/README.md#listruns) - List Runs
+- [`workflowsSchedulesGetSchedule`](docs/sdks/schedules/README.md#getschedule) - Get Schedule
+- [`workflowsSchedulesGetSchedules`](docs/sdks/schedules/README.md#getschedules) - Get Schedules
+- [`workflowsSchedulesPauseSchedule`](docs/sdks/schedules/README.md#pauseschedule) - Pause Schedule
+- [`workflowsSchedulesResumeSchedule`](docs/sdks/schedules/README.md#resumeschedule) - Resume Schedule
+- [`workflowsSchedulesScheduleWorkflow`](docs/sdks/schedules/README.md#scheduleworkflow) - Schedule Workflow
+- [`workflowsSchedulesTriggerSchedule`](docs/sdks/schedules/README.md#triggerschedule) - Trigger Schedule
+- [`workflowsSchedulesUnscheduleWorkflow`](docs/sdks/schedules/README.md#unscheduleworkflow) - Unschedule Workflow
+- [`workflowsSchedulesUpdateSchedule`](docs/sdks/schedules/README.md#updateschedule) - Update Schedule
+- [`workflowsUnarchiveWorkflow`](docs/sdks/workflows/README.md#unarchiveworkflow) - Unarchive Workflow
+- [`workflowsUpdateWorkflow`](docs/sdks/workflows/README.md#updateworkflow) - Update Workflow
+- ~~[`audioVoicesList`](docs/sdks/voices/README.md#list)~~ - List all voices :warning: **Deprecated**
+- ~~[`betaAgentsList`](docs/sdks/betaagents/README.md#list)~~ - List agent entities. :warning: **Deprecated** Use [`betaAgentsListPages`](docs/sdks/betaagents/README.md#listpages) instead.
+- ~~[`betaLibrariesDocumentsLibrariesDocumentsUpdateV1`](docs/sdks/documents/README.md#librariesdocumentsupdatev1)~~ - Update the metadata of a specific document. :warning: **Deprecated**
+- ~~[`betaLibrariesLibrariesUpdateV1`](docs/sdks/libraries/README.md#librariesupdatev1)~~ - Update a library. :warning: **Deprecated**
+- ~~[`workflowsExecuteWorkflowRegistration`](docs/sdks/workflows/README.md#executeworkflowregistration)~~ - Execute Workflow Registration :warning: **Deprecated**
+
+</details>
+<!-- End Standalone functions [standalone-funcs] -->
+
+<!-- Start Debugging [debug] -->
+## Debugging
+
+You can setup your SDK to emit debug logs for SDK requests and responses.
+
+You can pass a logger that matches `console`'s interface as an SDK option.
+
+> [!WARNING]
+> Beware that debug logging will reveal secrets, like API tokens in headers, in log messages printed to a console or files. It's recommended to use this feature only during local development and not in production.
+
+```typescript
+import { Mistral } from "@mistralai/mistralai";
+
+const sdk = new Mistral({ debugLogger: console });
+```
+
+You can also enable a default debug logger by setting an environment variable `MISTRAL_DEBUG` to true.
+<!-- End Debugging [debug] -->
+
+<!-- Placeholder for Future Speakeasy SDK Sections -->
+
+## Telemetry & Observability
+
+The SDK can emit [OpenTelemetry](https://opentelemetry.io/) traces for the API calls it makes (chat, agents, embeddings, OCR, …), following the
+[GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/).
+Spans capture the operation, model, token usage, and — unless redacted — the input/output messages and tool calls. Telemetry is **opt-in** and lives in the `@mistralai/mistralai/extra/observability` module.
+
+### Installation
+
+Dedicated mode loads the OpenTelemetry SDK and OTLP exporter on demand. Install them alongside the client:
+
+```bash
+npm install @opentelemetry/sdk-trace-base @opentelemetry/exporter-trace-otlp-http @opentelemetry/resources
+```
+
+### Enabling telemetry
+
+Either set an environment variable before creating the client:
+
+```bash
+export MISTRAL_SDK_TELEMETRY=dedicated   # dedicated | global | false
+```
+
+or configure it in code:
+
+```typescript
+import { Mistral } from "@mistralai/mistralai";
+import { configureTelemetry } from "@mistralai/mistralai/extra/observability";
+
+const client = new Mistral({ apiKey: process.env["MISTRAL_API_KEY"] });
+
+// Dedicated mode (default): the SDK creates and owns an OTLP exporter that ships
+// spans to the Mistral telemetry endpoint. Spans are redacted before export.
+await configureTelemetry(client);
+
+const response = await client.chat.complete({
+  model: "mistral-small-latest",
+  messages: [{ role: "user", content: "Hello!" }],
+});
+```
+
+### Provider modes
+
+`configureTelemetry(client, provider)` selects where spans go and who owns the export pipeline:
+
+| `provider` | Who owns the exporter | Where spans go | Redaction |
+| ---------- | --------------------- | -------------- | --------- |
+| `"dedicated"` (default) | The SDK | Mistral telemetry endpoint | Applied automatically |
+| `"global"` | Your application | Your global OpenTelemetry provider | **Not** applied — you need to wrap your own exporter |
+| a `TracerProvider` | Your application | The provider you pass | **Not** applied — you need to wrap your own exporter |
+
+In `global`/custom modes your application owns the pipeline, so the `redaction` option is ignored (a warning is logged). Wrap your own exporter with `RedactingSpanExporter` to redact spans there:
+
+```typescript
+import { trace } from "@opentelemetry/api";
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
+import { BasicTracerProvider, BatchSpanProcessor } from "@opentelemetry/sdk-trace-base";
+import { Mistral } from "@mistralai/mistralai";
+import { configureTelemetry, RedactingSpanExporter } from "@mistralai/mistralai/extra/observability";
+
+const provider = new BasicTracerProvider({
+  spanProcessors: [
+    new BatchSpanProcessor(new RedactingSpanExporter(new OTLPTraceExporter())),
+  ],
+});
+trace.setGlobalTracerProvider(provider);
+
+const client = new Mistral({ apiKey: process.env["MISTRAL_API_KEY"] });
+
+// SDK spans now flow through your global provider (already redacted above).
+await configureTelemetry(client, "global");
+```
+
+### Redaction
+
+In dedicated mode, redaction is on by default. Control it with the `redaction` option, which also accepts any of the reusable policies from `@mistralai/mistralai/extra/observability`:
+
+```typescript
+import { AttributeRedactionPolicy } from "@mistralai/mistralai/extra/observability";
+
+await configureTelemetry(client);                                                            // default policy (regex)
+await configureTelemetry(client, "dedicated", { redaction: new AttributeRedactionPolicy() }); // very conservative key-oriented policy
+await configureTelemetry(client, "dedicated", { redaction: false });                          // disabled - no redaction
+await configureTelemetry(client, "dedicated", {                                               // custom callback to control how attributes get redacted
+  redaction: (key, value) => (key.includes("email") ? undefined : value),
+});
+```
+
+| Policy | Strategy | Trade-off |
+| ------ | -------- | --------- |
+| `RegexRedactionPolicy` (default, `redaction: true`) | Content-oriented: keeps keys and structure, redacts matched substrings (secret tokens plus PII — emails, card-like sequences, IPv4). | Redacts most sensitive data while preserving observability value; may miss free-form PII or secrets not in the pattern set. |
+| `AttributeRedactionPolicy` | Key-oriented: redacts whole values for sensitive keys (explicit set, fragment match, or non-primitive value), then scans kept values for secret token patterns. | Very conservative, but erases most prompt/response content. |
+| `CallbackRedactionPolicy` (`redaction: <callback>`) | Your `(key, value) => value \| undefined` masker per attribute; return `undefined` to drop the attribute. | Full control; you own the logic. |
+
+The built-in defaults are exported as constants, so you can extend them instead of replacing them wholesale:
+
+```typescript
+import {
+  AttributeRedactionPolicy,
+  DEFAULT_PII_SECRET_PATTERNS,
+  DEFAULT_SENSITIVE_ATTRIBUTE_KEYS,
+  RegexRedactionPolicy,
+  configureTelemetry,
+} from "@mistralai/mistralai/extra/observability";
+
+// Content-oriented: add a custom secret pattern to the default set.
+await configureTelemetry(client, "dedicated", {
+  redaction: new RegexRedactionPolicy([...DEFAULT_PII_SECRET_PATTERNS, /\bacme-[a-z0-9]{16}\b/g]),
+});
+
+// Key-oriented: mask an extra application attribute on top of the defaults.
+await configureTelemetry(client, "dedicated", {
+  redaction: new AttributeRedactionPolicy({
+    sensitiveKeys: new Set([...DEFAULT_SENSITIVE_ATTRIBUTE_KEYS, "app.customer.email"]),
+  }),
+});
+```
+
+*Note: the `RedactingSpanExporter` primitive is reusable by any OpenTelemetry application, independent of the Mistral client.*
+
+### Environment variables
+
+| Variable | Description | Default |
+| -------- | ----------- | ------- |
+| `MISTRAL_SDK_TELEMETRY` | Auto-enable telemetry: `dedicated`, `global`, or `false`. | unset (disabled) |
+| `MISTRAL_OTLP_TRACES_ENDPOINT` | Override the OTLP traces endpoint used in dedicated mode. | `https://api.mistral.ai/telemetry/v1/traces` |
+| `MISTRAL_API_KEY` | Used as the bearer token for the dedicated-mode exporter. | — |
+
+Runnable examples live in [`examples/src/observability`](/examples/src/observability).
+
+# Development
+
+## Contributions
+
+While we value open-source contributions to this SDK, this library is generated programmatically. Any manual changes added to internal files will be overwritten on the next generation. 
+We look forward to hearing your feedback. Feel free to open a PR or an issue with a proof of concept and we'll do our best to include it in a future release. 
+

@@ -2,7 +2,7 @@
   "id": "memory-engine",
   "name": "Memory Engine",
   "description": "Native Memory Engine: 45 memory tools, session ingest/digest, curator and Control UI.",
-  "version": "4.5.1",
+  "version": "4.5.2",
   "configSchema": {
     "type": "object",
     "properties": {
