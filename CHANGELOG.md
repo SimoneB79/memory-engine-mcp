@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.5.5] — 2026-10-09
+
+### Fixed (openclaw-plugin)
+- **4.5.4 incompleta**: oltre al configSchema, la build aveva azzerato anche `contracts.tools` nel manifest, quindi il gateway rifiutava la registrazione dei 46 tool ("plugin must declare contracts.tools before registering agent tools") e il Memory Engine non caricava. 4.5.5 ripristina contracts.tools (46 tool), configSchema ingest e allinea la stringa VERSION interna in src/tools.ts.
+- Procedura release aggiornata: dopo `npm run build` ripristinare SEMPRE configSchema + contracts.tools nel manifest prima di validate/publish.
+
 ## [4.5.4] — 2026-10-09
 
 ### Fixed (openclaw-plugin)
