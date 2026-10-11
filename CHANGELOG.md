@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.5.6] — 2026-10-11
+
+### Fixed (openclaw-plugin)
+- **Pacchetto ClawHub senza file runtime**: il package ClawHub è costruito dal repo GitHub dove dist/ era gitignored → le installazioni da fonte clawhub: fallivano con "extension entry not found: ./dist/index.js" (visto sul gateway Anna). d'ora in poi dist/ è committato nel repo e incluso nell'artefatto ClawHub.
+- Versione allineata (manifest/package.json/VERSION interna) per il bump obbligatorio ClawHub.
+
 ## [4.5.5] — 2026-10-09
 
 ### Fixed (openclaw-plugin)
