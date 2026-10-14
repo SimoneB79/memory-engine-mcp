@@ -46,13 +46,15 @@ export default definePluginEntry({
         const me = createTools(dbPath);
         const curator = new Curator(me.__db, me.__engine, (api.config ?? {}).curator ?? {});
         const ingestCfg = ((api.config ?? {}).ingest ?? {});
+        const semanticCfg = ((api.config ?? {}).semantic ?? {});
+        const semanticDefault = semanticCfg.default_enabled !== false;
         const ingestEnabled = ingestCfg.enabled === true;
         const retentionDays = Number(ingestCfg.retention_days ?? 7);
         const logger = api.logger ?? console;
         // ── Tools ─────────────────────────────────────────────
         const defs = [
             { name: "memory_version", description: "Memory Engine TS version.", parameters: T.Object({}), execute: () => me.version() },
-            { name: "memory_recall", description: "Smart recall of past memories. Query short and specific. semantic=true merges embedding search.", parameters: T.Object({ query: T.String(), limit: T.Optional(T.Number()), domain: T.Optional(T.String()), semantic: T.Optional(T.Boolean()) }), execute: (a) => me.recall(a.query, a.limit ?? 5, a.domain, a.semantic ?? false) },
+            { name: "memory_recall", description: "Smart recall of past memories. Query short and specific. semantic=true merges embedding search.", parameters: T.Object({ query: T.String(), limit: T.Optional(T.Number()), domain: T.Optional(T.String()), semantic: T.Optional(T.Boolean()) }), execute: (a) => me.recall(a.query, a.limit ?? 5, a.domain, a.semantic ?? semanticDefault) },
             { name: "memory_recall_session", description: "Recall messages from a specific OpenClaw session (search within session/ domain atoms).", parameters: T.Object({ session_id: T.String(), query: T.String(), limit: T.Optional(T.Number()) }), execute: (a) => me.recall_session(a.session_id, a.query, a.limit ?? 10) },
             { name: "memory_remember", description: "Save a durable memory (fact, decision, procedure, preference).", parameters: T.Object({ title: T.String(), content: T.String(), type: T.Optional(T.String()), domain: T.Optional(T.String()), confidence: T.Optional(T.Number()) }), execute: (a) => me.remember(a.title, a.content, a.type ?? "fact", a.domain ?? "general", a.confidence ?? 0.8) },
             { name: "memory_working_set", description: "Task context pack with token budget.", parameters: T.Object({ query: T.String(), domain: T.Optional(T.String()), limit: T.Optional(T.Number()), token_budget: T.Optional(T.Number()) }), execute: (a) => me.working_set(a.query, a.domain, a.limit ?? 8, a.token_budget ?? 2000) },

@@ -2,7 +2,7 @@
   "id": "memory-engine",
   "name": "Memory Engine",
   "description": "Native Memory Engine: 45 memory tools, session ingest/digest, curator and Control UI.",
-  "version": "4.5.8",
+  "version": "4.5.9",
   "configSchema": {
     "type": "object",
     "properties": {
@@ -19,6 +19,18 @@
             "type": "number",
             "default": 7,
             "description": "Days before session_msg/session_digest atoms expire automatically."
+          }
+        },
+        "additionalProperties": false
+      },
+      "semantic": {
+        "type": "object",
+        "description": "Semantic search settings (embedding-based, smarter than keyword FTS).",
+        "properties": {
+          "default_enabled": {
+            "type": "boolean",
+            "default": true,
+            "description": "Use semantic search by default on memory_recall and memory_working_set. True = smarter results (recommended); False = keyword-only (faster, less intelligent). Can be overridden per-call with semantic=true/false."
           }
         },
         "additionalProperties": false
