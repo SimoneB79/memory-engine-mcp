@@ -88,7 +88,27 @@ export default definePluginEntry({
           description: d.description,
           parameters: d.parameters,
           execute: async (a: any, ...rest: any[]) => {
-            return wrapResult(await d.execute(normalizeParams(a, rest)));
+            const t0 = Date.now();
+            const params = normalizeParams(a, rest);
+            const paramStr = JSON.stringify(params).slice(0, 200);
+            try {
+              const raw = await d.execute(params);
+              const ms = Date.now() - t0;
+              // WARN se risultato vuoto/null (diagnostica problemi intermittenti)
+              if (raw === null || raw === undefined) {
+                logger.warn?.("[memory-engine] " + d.name + " -> NULL/UNDEFINED (" + ms + "ms) params=" + paramStr);
+              } else if (Array.isArray(raw) && raw.length === 0) {
+                logger.info?.("[memory-engine] " + d.name + " -> 0 results (" + ms + "ms) params=" + paramStr);
+              } else {
+                const size = Array.isArray(raw) ? raw.length + " items" : typeof raw;
+                logger.info?.("[memory-engine] " + d.name + " -> " + size + " (" + ms + "ms)");
+              }
+              return wrapResult(raw);
+            } catch (err: any) {
+              const ms = Date.now() - t0;
+              logger.error?.("[memory-engine] " + d.name + " ERROR (" + ms + "ms): " + String(err?.message ?? err) + " | stack=" + String(err?.stack ?? "n/a").slice(0, 500) + " params=" + paramStr);
+              throw err;
+            }
           },
         },
         { contract: "tools" }

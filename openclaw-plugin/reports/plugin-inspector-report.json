@@ -1,21 +1,21 @@
 {
   "generatedAt": "deterministic",
   "targetOpenClaw": {
-    "configuredPath": "npm:openclaw@2026.9.9",
+    "configuredPath": "npm:openclaw@2026.10.1",
     "searchedPaths": [
-      "npm:openclaw@2026.9.9"
+      "npm:openclaw@2026.10.1"
     ],
     "status": "ok",
-    "version": "2026.9.9",
+    "version": "2026.10.1",
     "compatRegistryPath": null,
     "compatRecordCount": 0,
     "compatRecords": [],
     "compatRecordStatuses": {},
-    "hookTypesPath": "dist/channel-core-5mS6rc1E.d.ts",
+    "hookTypesPath": "dist/agent-harness-runtime-D9aKax-K.d.ts",
     "hookNameCount": 0,
     "hookNames": [],
-    "apiBuilderPath": "dist/agent-harness-runtime-R8dTs5zl.d.ts",
-    "apiRegistrarCount": 58,
+    "apiBuilderPath": "dist/agent-harness-runtime-D9aKax-K.d.ts",
+    "apiRegistrarCount": 59,
     "apiRegistrars": [
       "registerAgentEventSubscription",
       "registerAgentHarness",
@@ -65,6 +65,7 @@
       "registerSessionExtension",
       "registerSessionSchedulerJob",
       "registerSpeechProvider",
+      "registerStorageProvider",
       "registerTextTransforms",
       "registerTool",
       "registerToolMetadata",
@@ -76,8 +77,8 @@
       "registerWidgetPresenter",
       "registerWorkerProvider"
     ],
-    "capturedRegistrationPath": "dist/agent-harness-runtime-R8dTs5zl.d.ts",
-    "capturedRegistrarCount": 58,
+    "capturedRegistrationPath": "dist/agent-harness-runtime-D9aKax-K.d.ts",
+    "capturedRegistrarCount": 59,
     "capturedRegistrars": [
       "registerAgentEventSubscription",
       "registerAgentHarness",
@@ -127,6 +128,7 @@
       "registerSessionExtension",
       "registerSessionSchedulerJob",
       "registerSpeechProvider",
+      "registerStorageProvider",
       "registerTextTransforms",
       "registerTool",
       "registerToolMetadata",
@@ -139,7 +141,7 @@
       "registerWorkerProvider"
     ],
     "packagePath": "package.json",
-    "sdkExportCount": 352,
+    "sdkExportCount": 344,
     "sdkExports": [
       "openclaw/plugin-sdk/access-groups",
       "openclaw/plugin-sdk/account-core",
@@ -201,14 +203,11 @@
       "openclaw/plugin-sdk/channel-inbound-debounce",
       "openclaw/plugin-sdk/channel-ingress-runtime",
       "openclaw/plugin-sdk/channel-join-intro-runtime",
-      "openclaw/plugin-sdk/channel-lifecycle",
       "openclaw/plugin-sdk/channel-mention-gating",
-      "openclaw/plugin-sdk/channel-message",
       "openclaw/plugin-sdk/channel-outbound",
       "openclaw/plugin-sdk/channel-pairing",
       "openclaw/plugin-sdk/channel-plugin-common",
       "openclaw/plugin-sdk/channel-policy",
-      "openclaw/plugin-sdk/channel-reply-pipeline",
       "openclaw/plugin-sdk/channel-route",
       "openclaw/plugin-sdk/channel-runtime-context",
       "openclaw/plugin-sdk/channel-secret-basic-runtime",
@@ -228,7 +227,6 @@
       "openclaw/plugin-sdk/codex-mcp-projection",
       "openclaw/plugin-sdk/codex-session-transcript-runtime",
       "openclaw/plugin-sdk/collection-runtime",
-      "openclaw/plugin-sdk/command-auth",
       "openclaw/plugin-sdk/command-auth-native",
       "openclaw/plugin-sdk/command-detection",
       "openclaw/plugin-sdk/command-primitives-runtime",
@@ -239,7 +237,6 @@
       "openclaw/plugin-sdk/concurrency-runtime",
       "openclaw/plugin-sdk/config-contracts",
       "openclaw/plugin-sdk/config-mutation",
-      "openclaw/plugin-sdk/config-runtime",
       "openclaw/plugin-sdk/context-visibility-runtime",
       "openclaw/plugin-sdk/control-ui",
       "openclaw/plugin-sdk/control-ui-link-reader",
@@ -258,7 +255,6 @@
       "openclaw/plugin-sdk/direct-dm-guard-policy",
       "openclaw/plugin-sdk/directory-config-runtime",
       "openclaw/plugin-sdk/directory-runtime",
-      "openclaw/plugin-sdk/discord",
       "openclaw/plugin-sdk/doctor-repair-runtime",
       "openclaw/plugin-sdk/document-extractor",
       "openclaw/plugin-sdk/embedding-provider-adapter",
@@ -289,7 +285,6 @@
       "openclaw/plugin-sdk/inbound-envelope",
       "openclaw/plugin-sdk/inbound-event-delivery",
       "openclaw/plugin-sdk/inbound-reply-dispatch",
-      "openclaw/plugin-sdk/infra-runtime",
       "openclaw/plugin-sdk/ingress-effect-once",
       "openclaw/plugin-sdk/inline-image-data-url-runtime",
       "openclaw/plugin-sdk/interactive-runtime",
@@ -465,7 +460,6 @@
       "openclaw/plugin-sdk/system-event-runtime",
       "openclaw/plugin-sdk/talk-config-runtime",
       "openclaw/plugin-sdk/target-resolver-runtime",
-      "openclaw/plugin-sdk/telegram-account",
       "openclaw/plugin-sdk/temp-path",
       "openclaw/plugin-sdk/text-autolink-runtime",
       "openclaw/plugin-sdk/text-chunking",
@@ -499,46 +493,21 @@
     "reservedSdkExports": [],
     "supportedFacadeSdkExports": [],
     "publicPluginOwnedSdkExports": [],
-    "manifestTypesPath": "dist/cli-backend.types-8yNEL-p2.d.ts",
+    "manifestTypesPath": "dist/agent-scope-BiCmCvib.d.ts",
     "manifestFieldCount": 0,
     "manifestFields": [],
-    "manifestContractFieldCount": 24,
-    "manifestContractFields": [
-      "agentToolResultMiddleware",
-      "codeModeExecutors",
-      "decisionProviders",
-      "documentExtractors",
-      "embeddedExtensionFactories",
-      "embeddingProviders",
-      "externalAuthProviders",
-      "gatewayMethodDispatch",
-      "imageGenerationProviders",
-      "mediaUnderstandingProviders",
-      "migrationProviders",
-      "musicGenerationProviders",
-      "realtimeTranscriptionProviders",
-      "realtimeVoiceProviders",
-      "speechProviders",
-      "tools",
-      "transcriptSourceProviders",
-      "trustedToolPolicies",
-      "usageProviders",
-      "videoGenerationProviders",
-      "webContentExtractors",
-      "webFetchProviders",
-      "webSearchProviders",
-      "workerProviders"
-    ],
+    "manifestContractFieldCount": 0,
+    "manifestContractFields": [],
     "requestedVersion": "latest",
-    "eligibilityVersion": "2026.9.9",
+    "eligibilityVersion": "2026.10.1",
     "source": {
       "type": "npm",
       "package": "openclaw",
       "registry": "https://registry.npmjs.org",
       "distTag": "latest",
-      "tarball": "https://registry.npmjs.org/openclaw/-/openclaw-2026.9.9.tgz",
-      "integrity": "sha512-3sB6ejq5smBozfBhVEDfK48wFpbkx+0f6PJ19qZjC3ab3RoFrYO58CnE2mAsbUy8sXdxdBtjQ3vkAqcW9BZXAw==",
-      "shasum": "fd8827563525112d0295e5c592bdf33cfacfab95",
+      "tarball": "https://registry.npmjs.org/openclaw/-/openclaw-2026.10.1.tgz",
+      "integrity": "sha512-C072/lxy83KP1nMCnJbipr4O+EtIR9XXbjzQFM+ol7VE5ci2MkKk5XTxfSG70jxpEVaGFeXcEmObHxR/ZHLdHw==",
+      "shasum": "89d03efddf2087962e42d05d457daf04e7a1d25f",
       "repository": {
         "url": "git+https://github.com/openclaw/openclaw.git",
         "type": "git"
@@ -546,7 +515,7 @@
     },
     "cache": {
       "hit": false,
-      "key": "2026.9.9-8d3e5da54cc1"
+      "key": "2026.10.1-48272e849e50"
     }
   },
   "status": "pass",
@@ -623,6 +592,7 @@
         "dist/curator.js",
         "dist/db.js",
         "dist/digest.js",
+        "dist/doctor-contract-api.js",
         "dist/embeddings.js",
         "dist/engine.js",
         "dist/entry.js",
@@ -638,6 +608,7 @@
         "src/curator.ts",
         "src/db.ts",
         "src/digest.ts",
+        "src/doctor-contract-api.ts",
         "src/embeddings.ts",
         "src/engine.ts",
         "src/entry.ts",
@@ -655,13 +626,14 @@
           "path": "openclaw.plugin.json",
           "id": "memory-engine",
           "name": "Memory Engine",
-          "version": "4.5.2",
+          "version": "4.5.6",
           "keys": [
             "activation",
             "configSchema",
             "contracts",
             "controlUi",
             "description",
+            "doctorContract",
             "id",
             "name",
             "version"
@@ -680,7 +652,7 @@
       "package": {
         "path": "package.json",
         "name": "openclaw-plugin-memory-engine",
-        "version": "4.5.2",
+        "version": "4.5.6",
         "type": "module",
         "main": null,
         "npmPack": {
@@ -733,7 +705,7 @@
         {
           "path": "package.json",
           "name": "openclaw-plugin-memory-engine",
-          "version": "4.5.2",
+          "version": "4.5.6",
           "type": "module",
           "main": null,
           "npmPack": {
@@ -899,7 +871,7 @@
       "evidence": [
         "package.json",
         "openclaw-plugin-memory-engine",
-        "version:4.5.2"
+        "version:4.5.6"
       ]
     },
     {

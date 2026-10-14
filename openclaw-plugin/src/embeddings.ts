@@ -20,7 +20,8 @@ export async function embed(text: string): Promise<Float32Array | null> {
     const vec: number[] | undefined = data?.embeddings?.[0] ?? data?.embedding;
     if (!vec || !vec.length) return null;
     return new Float32Array(vec);
-  } catch {
+  } catch (err: any) {
+    console.warn("[memory-engine] embed FAILED: " + String(err?.message ?? err) + " (ollama=" + OLLAMA + " model=" + MODEL + ")");
     return null;
   }
 }

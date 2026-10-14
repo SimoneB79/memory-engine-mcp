@@ -78,11 +78,11 @@ _none_
 
 | Metric                    | Value                                    |
 | ------------------------- | ---------------------------------------- |
-| Configured path           | npm:openclaw@2026.9.9                    |
+| Configured path           | npm:openclaw@2026.10.1                   |
 | Status                    | ok                                       |
 | Requested version         | latest                                   |
-| Resolved version          | 2026.9.9                                 |
-| Range eligibility version | 2026.9.9                                 |
+| Resolved version          | 2026.10.1                                |
+| Range eligibility version | 2026.10.1                                |
 | Source                    | npm:openclaw                             |
 | NPM dist-tag              | latest                                   |
 | Prepared cache            | miss                                     |
@@ -90,17 +90,17 @@ _none_
 | Compat records            | 0                                        |
 | Compat status counts      | -                                        |
 | Record ids                | -                                        |
-| Hook registry             | dist/channel-core-5mS6rc1E.d.ts          |
+| Hook registry             | dist/agent-harness-runtime-D9aKax-K.d.ts |
 | Hook names                | 0                                        |
-| API builder               | dist/agent-harness-runtime-R8dTs5zl.d.ts |
-| API registrars            | 58                                       |
-| Captured registration     | dist/agent-harness-runtime-R8dTs5zl.d.ts |
-| Captured registrars       | 58                                       |
+| API builder               | dist/agent-harness-runtime-D9aKax-K.d.ts |
+| API registrars            | 59                                       |
+| Captured registration     | dist/agent-harness-runtime-D9aKax-K.d.ts |
+| Captured registrars       | 59                                       |
 | Package metadata          | package.json                             |
-| Plugin SDK exports        | 352                                      |
-| Manifest types            | dist/cli-backend.types-8yNEL-p2.d.ts     |
+| Plugin SDK exports        | 344                                      |
+| Manifest types            | dist/agent-scope-BiCmCvib.d.ts           |
 | Manifest fields           | 0                                        |
-| Manifest contract fields  | 24                                       |
+| Manifest contract fields  | 0                                        |
 
 ## Warnings
 
@@ -135,5 +135,5 @@ _none_
 | openclaw-plugin-memory-engine | seam-inventory         | log   | observed 2 hooks, 2 registrations, and 1 manifest contracts                           | hook:agent_end, hook:message_received, registration:definePluginEntry, registration:registerTool, manifestContract:tools                   | -             |
 | openclaw-plugin-memory-engine | api-registrars-present | log   | all observed api.register* calls exist in the target OpenClaw plugin API builder      | registerTool                                                                                                                               | -             |
 | openclaw-plugin-memory-engine | sdk-exports-present    | log   | all observed plugin SDK imports exist in target OpenClaw package exports              | openclaw/plugin-sdk/control-ui, openclaw/plugin-sdk/feature-contract, openclaw/plugin-sdk/feature-plugin, openclaw/plugin-sdk/plugin-entry | -             |
-| openclaw-plugin-memory-engine | package-metadata       | log   | selected package metadata for plugin contract checks                                  | package.json, openclaw-plugin-memory-engine, version:4.5.2                                                                                 | -             |
+| openclaw-plugin-memory-engine | package-metadata       | log   | selected package metadata for plugin contract checks                                  | package.json, openclaw-plugin-memory-engine, version:4.5.6                                                                                 | -             |
 | openclaw-plugin-memory-engine | declarative-contracts  | log   | fixture declares manifest contracts that can be checked without executing plugin code | tools                                                                                                                                      | -             |

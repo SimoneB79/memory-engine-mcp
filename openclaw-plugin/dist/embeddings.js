@@ -16,7 +16,8 @@ export async function embed(text) {
             return null;
         return new Float32Array(vec);
     }
-    catch {
+    catch (err) {
+        console.warn("[memory-engine] embed FAILED: " + String(err?.message ?? err) + " (ollama=" + OLLAMA + " model=" + MODEL + ")");
         return null;
     }
 }
