@@ -8,6 +8,8 @@ import * as path from "node:path";
 export function createFeatureHandlers() {
     const dbPath = process.env.MEMORY_DB_PATH ?? "/data/memory.db";
     const db = new DatabaseSync(dbPath);
+    db.exec('PRAGMA journal_mode=WAL');
+    db.exec('PRAGMA busy_timeout=5000');
     const engine = new Engine(db, {});
     const curator = new Curator(db, engine, {});
     const q = (sql: string, ...p: any[]) => db.prepare(sql).all(...p) as any[];

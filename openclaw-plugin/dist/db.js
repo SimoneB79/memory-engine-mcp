@@ -5,7 +5,10 @@
  */
 import { DatabaseSync } from "node:sqlite";
 export function openMemoryDb(path) {
-    return new DatabaseSync(path, { readOnly: true });
+    const ro = new DatabaseSync(path, { readOnly: true });
+    ro.exec('PRAGMA journal_mode=WAL');
+    ro.exec('PRAGMA busy_timeout=5000');
+    return ro;
 }
 export function parityReport(path) {
     const db = openMemoryDb(path);

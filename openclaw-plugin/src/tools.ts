@@ -7,10 +7,12 @@ import { DatabaseSync } from "node:sqlite";
 import { Engine, Row } from "./engine.js";
 import { buildSessionDigest } from "./digest.js";
 
-export const VERSION = "4.5.7";
+export const VERSION = "4.5.8";
 
 export function createTools(dbPath: string) {
   const db = new DatabaseSync(dbPath);
+  db.exec('PRAGMA journal_mode=WAL');
+  db.exec('PRAGMA busy_timeout=5000');
   const engine = new Engine(db, {});
 
   const q = (sql: string, ...p: any[]) => db.prepare(sql).all(...p) as any[];

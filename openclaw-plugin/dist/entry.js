@@ -179,7 +179,9 @@ export default definePluginEntry({
                 try {
                     me.__db.prepare("UPDATE atoms SET status='expired', updated_at=unixepoch() WHERE type IN ('session_msg','session_digest') AND status='active' AND ttl IS NOT NULL AND ttl <= unixepoch()").run();
                 }
-                catch { }
+                catch (ttlErr) {
+                    logger.warn?.('[memory-engine] TTL UPDATE failed: ' + String(ttlErr));
+                }
                 for (const [sid, arr] of buffer) {
                     if (arr.length > (flushedCount.get(sid) ?? 0))
                         flushSession(sid, sid);
