@@ -102,4 +102,16 @@ export declare function createFeatureHandlers(): {
         ok: boolean;
         purged: number;
     };
+    rules_list_all: () => any[];
+    rules_add: ({ rule_text, category, priority }: any) => {
+        ok: boolean;
+        rule_text: any;
+        category: any;
+        priority: any;
+    };
+    rules_remove: ({ id }: any) => {
+        ok: boolean;
+        id: any;
+        deactivated: boolean;
+    };
 };

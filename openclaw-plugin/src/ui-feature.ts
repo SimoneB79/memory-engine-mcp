@@ -133,5 +133,21 @@ export function createFeatureHandlers() {
                 x("DELETE FROM atoms WHERE id=?", r.id);
             }
             return { ok: true, purged: victims.length };
-        },    };
+        },
+
+        // ── Binding Rules (v4.6.3): regole vincolanti ──
+        rules_list_all: () => {
+            db.exec("CREATE TABLE IF NOT EXISTS binding_rules (id INTEGER PRIMARY KEY AUTOINCREMENT, rule_text TEXT NOT NULL, category TEXT DEFAULT 'general', priority INTEGER DEFAULT 5, active INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))");
+            return q("SELECT id, rule_text, category, priority, active, created_at, updated_at FROM binding_rules ORDER BY priority ASC, id ASC");
+        },
+        rules_add: ({ rule_text, category, priority }: any) => {
+            db.exec("CREATE TABLE IF NOT EXISTS binding_rules (id INTEGER PRIMARY KEY AUTOINCREMENT, rule_text TEXT NOT NULL, category TEXT DEFAULT 'general', priority INTEGER DEFAULT 5, active INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))");
+            x("INSERT INTO binding_rules (rule_text, category, priority) VALUES (?,?,?)", rule_text, category || 'general', priority || 5);
+            return { ok: true, rule_text, category: category || 'general', priority: priority || 5 };
+        },
+        rules_remove: ({ id }: any) => {
+            x("UPDATE binding_rules SET active = 0, updated_at = datetime('now') WHERE id = ?", id);
+            return { ok: true, id, deactivated: true };
+        },
+    };
 }
