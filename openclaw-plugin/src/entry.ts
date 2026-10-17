@@ -79,6 +79,11 @@ export default definePluginEntry({
       { name: "memory_admin", description: "Admin jobs pointer.", parameters: T.Object({}), execute: () => me._admin_note() },
       { name: "memory_curator_run", description: "Conservative curation pass: compact, bonds, isolated classification, promotions, merges. dry_run default true.", parameters: T.Object({ dry_run: T.Optional(T.Boolean()), auto_apply: T.Optional(T.Boolean()), max_atoms: T.Optional(T.Number()) }), execute: (a) => curator.run(a.dry_run ?? true, a.auto_apply ?? false, a.max_atoms) },
       { name: "memory_cognitive_status", description: "Cognitive health metrics for the memory graph.", parameters: T.Object({}), execute: () => curator.status() },
+      // ── Binding Rules (v4.6.4) ──
+      { name: "memory_rules_get_binding", description: "Get active binding rules.", parameters: T.Object({}), execute: () => me.rules_get_binding() },
+      { name: "memory_rules_add", description: "Add a binding rule.", parameters: T.Object({ rule_text: T.String(), category: T.Optional(T.String()), priority: T.Optional(T.Number()) }), execute: (a) => me.rules_add(a.rule_text, a.category ?? "general", a.priority ?? 5) },
+      { name: "memory_rules_remove", description: "Deactivate a binding rule by id.", parameters: T.Object({ id: T.Number() }), execute: (a) => me.rules_remove(a.id) },
+      { name: "memory_rules_list_all", description: "List all binding rules.", parameters: T.Object({}), execute: () => me.rules_list_all() },
     ];
     for (const d of buildAdminDefs(me.__db)) defs.push(d);
     for (const d of buildSemanticDefs(me.__db, curator)) defs.push(d);
