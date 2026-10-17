@@ -6,7 +6,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { Engine } from "./engine.js";
 import { buildSessionDigest } from "./digest.js";
-export const VERSION = "4.6.1";
+export const VERSION = "4.6.2";
 export function createTools(dbPath) {
     const db = new DatabaseSync(dbPath);
     db.exec('PRAGMA journal_mode=WAL');

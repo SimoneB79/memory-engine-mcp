@@ -5,7 +5,7 @@
  */
 import { DatabaseSync } from "node:sqlite";
 import { Row } from "./engine.js";
-export declare const VERSION = "4.6.1";
+export declare const VERSION = "4.6.2";
 export declare function createTools(dbPath: string): {
     __db: DatabaseSync;
     version: () => {
