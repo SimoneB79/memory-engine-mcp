@@ -44,6 +44,7 @@ export default defineControlUiPlugin({
                 mkTab("backup", "Backup");
                 mkTab("questions", "Domande");
                 mkTab("database", "Database");
+                mkTab("rules", "Regole");
                 const status = (m) => { const el = document.createElement("div"); el.textContent = m; el.style.opacity = "0.6"; return el; };
                 // ── PANORAMICA ──
                 const ov = pages["overview"];
@@ -404,6 +405,98 @@ export default defineControlUiPlugin({
                         recs.textContent = String(e);
                     }
                 };
+                // ── REGOLE VINCOLANTI ──
+                const rl = pages["rules"];
+                const rlDesc = document.createElement("div");
+                rlDesc.style.cssText = "padding:12px;border-radius:8px;background:rgba(127,127,127,0.08);font-size:13px;margin-bottom:12px;";
+                rlDesc.textContent = "Regole vincolanti: vengono caricate all'avvio di ogni sessione e inserite nel contesto come direttive ad alta priorità. Poche regole, ma fondamentali.";
+                // form aggiunta
+                const rlForm = document.createElement("div");
+                rlForm.style.cssText = "display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;";
+                const rlInput = document.createElement("input");
+                rlInput.placeholder = "Testo della regola…";
+                rlInput.style.cssText = "flex:1;min-width:250px;padding:8px 12px;border-radius:6px;border:1px solid rgba(127,127,127,0.4);background:transparent;color:inherit;";
+                const rlCat = document.createElement("select");
+                rlCat.style.cssText = "padding:8px;border-radius:6px;border:1px solid rgba(127,127,127,0.4);background:transparent;color:inherit;";
+                for (const c of ["general", "destructive", "external", "privacy", "domain"]) {
+                    const o = document.createElement("option");
+                    o.value = c;
+                    o.textContent = c;
+                    rlCat.append(o);
+                }
+                const rlPrio = document.createElement("select");
+                rlPrio.style.cssText = rlCat.style.cssText;
+                for (let p = 1; p <= 10; p++) {
+                    const o = document.createElement("option");
+                    o.value = String(p);
+                    o.textContent = p === 1 ? "1 (massima)" : String(p);
+                    if (p === 5)
+                        o.selected = true;
+                    rlPrio.append(o);
+                }
+                const rlBtn = document.createElement("button");
+                rlBtn.textContent = "Aggiungi";
+                rlBtn.style.cssText = "padding:8px 16px;border-radius:6px;border:1px solid rgba(127,127,127,0.4);background:rgba(127,127,127,0.15);color:inherit;cursor:pointer;";
+                rlForm.append(rlInput, rlCat, rlPrio, rlBtn);
+                // lista regole
+                const rlList = document.createElement("div");
+                rlList.style.cssText = "display:flex;flex-direction:column;gap:6px;";
+                rl.append(rlDesc, rlForm, rlList);
+                const rlCount = document.createElement("div");
+                rlCount.style.cssText = "font-size:12px;opacity:0.7;margin-top:8px;";
+                rl.append(rlCount);
+                const loadRules = async () => {
+                    rlList.innerHTML = "";
+                    try {
+                        const all = await feature.invoke("rules_list_all", {});
+                        rlCount.textContent = all.length + " regole totali · " + all.filter((r) => r.active).length + " attive";
+                        if (!all.length) {
+                            rlList.append(status("Nessuna regola. Agungine una sopra."));
+                            return;
+                        }
+                        for (const r of all) {
+                            const row = document.createElement("div");
+                            row.style.cssText = "display:flex;gap:8px;align-items:center;padding:8px 12px;border-radius:6px;background:rgba(127,127,127,0.08);" + (r.active ? "" : "opacity:0.4;");
+                            const txt = document.createElement("div");
+                            txt.style.cssText = "flex:1;font-size:13px;";
+                            txt.textContent = (r.active ? "✅ " : "⛔ ") + r.rule_text;
+                            const cat = document.createElement("span");
+                            cat.textContent = r.category;
+                            cat.style.cssText = "font-size:10px;padding:2px 6px;border-radius:4px;background:rgba(127,127,127,0.2);";
+                            const prio = document.createElement("span");
+                            prio.textContent = "P" + r.priority;
+                            prio.style.cssText = "font-size:10px;opacity:0.6;";
+                            const tog = document.createElement("button");
+                            tog.textContent = r.active ? "Disattiva" : "Attiva";
+                            tog.style.cssText = "padding:4px 8px;font-size:11px;border-radius:4px;border:1px solid rgba(127,127,127,0.4);background:transparent;color:inherit;cursor:pointer;";
+                            tog.onclick = async () => {
+                                if (r.active)
+                                    await feature.invoke("rules_remove", { id: r.id });
+                                else { /* riattiva: implementare se serve */ }
+                                loadRules();
+                            };
+                            row.append(txt, cat, prio, tog);
+                            rlList.append(row);
+                        }
+                    }
+                    catch (e) {
+                        rlList.append(status("Errore: " + String(e)));
+                    }
+                };
+                rlBtn.onclick = async () => {
+                    const t = rlInput.value.trim();
+                    if (!t)
+                        return;
+                    try {
+                        await feature.invoke("rules_add", { rule_text: t, category: rlCat.value, priority: parseInt(rlPrio.value) });
+                        rlInput.value = "";
+                        loadRules();
+                    }
+                    catch (e) {
+                        alert("Errore: " + String(e));
+                    }
+                };
+                loadRules();
                 // prima tab attiva
                 tabs.querySelector("button")?.click();
                 root.prepend(h1, tabs);

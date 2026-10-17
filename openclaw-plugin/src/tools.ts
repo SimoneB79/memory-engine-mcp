@@ -13,6 +13,18 @@ export function createTools(dbPath: string) {
   const db = new DatabaseSync(dbPath);
   db.exec('PRAGMA journal_mode=WAL');
   db.exec('PRAGMA busy_timeout=5000');
+
+  // ── Binding Rules (v4.6.0): regole vincolanti gestite da Web UI ──
+  db.exec(`CREATE TABLE IF NOT EXISTS binding_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    rule_text TEXT NOT NULL,
+    category TEXT DEFAULT 'general',
+    priority INTEGER DEFAULT 5,
+    active INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  )`);
+
   const engine = new Engine(db, {});
 
   const q = (sql: string, ...p: any[]) => db.prepare(sql).all(...p) as any[];
@@ -232,6 +244,26 @@ export function createTools(dbPath: string) {
       db.prepare("INSERT INTO atoms (id, type, memory_tier, domain, title, body, confidence, status, source, weight, tags, meta, created_at, updated_at, accessed_at) VALUES (?,?,?,?,?,?,0.7,'active','ai',1.0,'[]','{}',?,?,?)")
         .run(draft.id, "session_digest", "episodic", "session/" + sessionId, draft.title, draft.body, now, now, now);
       return { created: true, ...draft };
+    },
+
+    // ── Binding Rules (v4.6.0): regole vincolanti ──
+    rules_get_binding: () => {
+      const rules = q("SELECT id, rule_text, category, priority, active FROM binding_rules WHERE active = 1 ORDER BY priority ASC, id ASC");
+      return { rules, count: rules.length, note: rules.length === 0 ? "Nessuna regola vincolante attiva" : "Regole vincolanti attive" };
+    },
+
+    rules_add: (rule_text: string, category = "general", priority = 5) => {
+      db.prepare("INSERT INTO binding_rules (rule_text, category, priority) VALUES (?,?,?)").run(rule_text, category, priority);
+      return { ok: true, rule_text, category, priority };
+    },
+
+    rules_remove: (id: number) => {
+      db.prepare("UPDATE binding_rules SET active = 0, updated_at = datetime('now') WHERE id = ?").run(id);
+      return { ok: true, id, deactivated: true };
+    },
+
+    rules_list_all: () => {
+      return q("SELECT id, rule_text, category, priority, active, created_at, updated_at FROM binding_rules ORDER BY priority ASC, id ASC");
     },
 
     // ── Admin jobs: puntano al server Python ──

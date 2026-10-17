@@ -100,5 +100,22 @@ export declare function createTools(dbPath: string): {
         note?: undefined;
         created: boolean;
     };
+    rules_get_binding: () => {
+        rules: any[];
+        count: number;
+        note: string;
+    };
+    rules_add: (rule_text: string, category?: string, priority?: number) => {
+        ok: boolean;
+        rule_text: string;
+        category: string;
+        priority: number;
+    };
+    rules_remove: (id: number) => {
+        ok: boolean;
+        id: number;
+        deactivated: boolean;
+    };
+    rules_list_all: () => any[];
     _admin_note: () => string;
 };
