@@ -111,6 +111,16 @@ export declare function createFeatureHandlers(): {
         category: any;
         priority: any;
     };
+    rules_set_active: ({ id, active }: any) => {
+        ok: boolean;
+        id: any;
+        active: boolean;
+    };
+    rules_delete: ({ id }: any) => {
+        ok: boolean;
+        id: any;
+        deleted: boolean;
+    };
     rules_remove: ({ id }: any) => {
         ok: boolean;
         id: any;

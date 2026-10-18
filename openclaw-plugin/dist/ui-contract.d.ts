@@ -120,6 +120,23 @@ export declare const contract: {
             }>;
             readonly output: Type.TObject<{}>;
         };
+        readonly rules_set_active: {
+            readonly kind: "action";
+            readonly description: "Activate or deactivate a binding rule.";
+            readonly input: Type.TObject<{
+                id: Type.TInteger;
+                active: Type.TBoolean;
+            }>;
+            readonly output: Type.TObject<{}>;
+        };
+        readonly rules_delete: {
+            readonly kind: "action";
+            readonly description: "Permanently delete a binding rule.";
+            readonly input: Type.TObject<{
+                id: Type.TInteger;
+            }>;
+            readonly output: Type.TObject<{}>;
+        };
         readonly db_stats: {
             readonly kind: "query";
             readonly description: "Database management stats: counts by status, db file size, retention setting.";

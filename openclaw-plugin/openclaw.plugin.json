@@ -2,7 +2,7 @@
   "id": "memory-engine",
   "name": "Memory Engine",
   "description": "Native Memory Engine: 50 memory tools (binding rules!), session ingest/digest, curator and Control UI.",
-  "version": "4.6.8",
+  "version": "4.6.9",
   "configSchema": {
     "type": "object",
     "properties": {
@@ -42,7 +42,7 @@
     "onStartup": true
   },
   "controlUi": {
-    "entry": "dist/control-ui/82ce4c8293253f6e0303496deeec9fab6b1b501b0f5dfb59dcb4ffd7cf9860c1/index.js"
+    "entry": "dist/control-ui/fee94e305c114dee6f77b93a1d420441b522d2021f78aede902ac486cef5e697/index.js"
   },
   "doctorContract": {
     "stateMigrations": []
@@ -98,7 +98,9 @@
       "memory_rules_get_binding",
       "memory_rules_add",
       "memory_rules_remove",
-      "memory_rules_list_all"
+      "memory_rules_list_all",
+      "memory_rules_set_active",
+      "memory_rules_delete"
     ]
   }
 }

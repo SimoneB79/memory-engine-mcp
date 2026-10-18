@@ -79,6 +79,16 @@ export const contract = defineFeatureContract({
       input: Type.Object({ id: Type.Integer({ minimum: 1 }) }, { additionalProperties: false }),
       output: Type.Object({}, { additionalProperties: true }),
     },
+    rules_set_active: {
+      kind: "action", description: "Activate or deactivate a binding rule.",
+      input: Type.Object({ id: Type.Integer({ minimum: 1 }), active: Type.Boolean() }, { additionalProperties: false }),
+      output: Type.Object({}, { additionalProperties: true }),
+    },
+    rules_delete: {
+      kind: "action", description: "Permanently delete a binding rule.",
+      input: Type.Object({ id: Type.Integer({ minimum: 1 }) }, { additionalProperties: false }),
+      output: Type.Object({}, { additionalProperties: true }),
+    },
     db_stats: {
       kind: "query", description: "Database management stats: counts by status, db file size, retention setting.",
       input: Type.Object({}, { additionalProperties: false }),

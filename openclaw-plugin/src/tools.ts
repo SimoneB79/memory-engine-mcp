@@ -7,7 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import { Engine, Row } from "./engine.js";
 import { buildSessionDigest } from "./digest.js";
 
-export const VERSION = "4.6.8";
+export const VERSION = "4.6.9";
 
 export function createTools(dbPath: string) {
   const db = new DatabaseSync(dbPath);
@@ -260,6 +260,16 @@ export function createTools(dbPath: string) {
     rules_remove: (id: number) => {
       db.prepare("UPDATE binding_rules SET active = 0, updated_at = datetime('now') WHERE id = ?").run(id);
       return { ok: true, id, deactivated: true };
+    },
+
+    rules_set_active: (id: number, active: boolean) => {
+      db.prepare("UPDATE binding_rules SET active = ?, updated_at = datetime('now') WHERE id = ?").run(active ? 1 : 0, id);
+      return { ok: true, id, active };
+    },
+
+    rules_delete: (id: number) => {
+      db.prepare("DELETE FROM binding_rules WHERE id = ?").run(id);
+      return { ok: true, id, deleted: true };
     },
 
     rules_list_all: () => {

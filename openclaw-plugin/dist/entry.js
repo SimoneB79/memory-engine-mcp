@@ -78,6 +78,8 @@ export default definePluginEntry({
             { name: "memory_rules_add", description: "Add a binding rule.", parameters: T.Object({ rule_text: T.String(), category: T.Optional(T.String()), priority: T.Optional(T.Number()) }), execute: (a) => me.rules_add(a.rule_text, a.category ?? "general", a.priority ?? 5) },
             { name: "memory_rules_remove", description: "Deactivate a binding rule by id.", parameters: T.Object({ id: T.Number() }), execute: (a) => me.rules_remove(a.id) },
             { name: "memory_rules_list_all", description: "List all binding rules.", parameters: T.Object({}), execute: () => me.rules_list_all() },
+            { name: "memory_rules_set_active", description: "Activate or deactivate a binding rule.", parameters: T.Object({ id: T.Number(), active: T.Boolean() }), execute: (a) => me.rules_set_active(a.id, a.active) },
+            { name: "memory_rules_delete", description: "Permanently delete a binding rule by id.", parameters: T.Object({ id: T.Number() }), execute: (a) => me.rules_delete(a.id) },
         ];
         for (const d of buildAdminDefs(me.__db))
             defs.push(d);

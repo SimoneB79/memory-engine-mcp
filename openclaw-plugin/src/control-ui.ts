@@ -365,11 +365,18 @@ export default defineControlUiPlugin({
               tog.textContent = r.active ? "Disattiva" : "Attiva";
               tog.style.cssText = "padding:4px 8px;font-size:11px;border-radius:4px;border:1px solid rgba(127,127,127,0.4);background:transparent;color:inherit;cursor:pointer;";
               tog.onclick = async () => {
-                if (r.active) await feature.invoke("rules_remove", { id: r.id });
-                else { /* riattiva: implementare se serve */ }
+                await feature.invoke("rules_set_active", { id: r.id, active: !r.active });
                 loadRules();
               };
-              row.append(txt, cat, prio, tog);
+              const del = document.createElement("button");
+              del.textContent = "Elimina";
+              del.style.cssText = "padding:4px 8px;font-size:11px;border-radius:4px;border:1px solid rgba(200,80,80,0.5);background:transparent;color:#e57373;cursor:pointer;";
+              del.onclick = async () => {
+                if (!confirm("Eliminare definitivamente questa regola?")) return;
+                await feature.invoke("rules_delete", { id: r.id });
+                loadRules();
+              };
+              row.append(txt, cat, prio, tog, del);
               rlList.append(row);
             }
           } catch (e: any) { rlList.append(status("Errore: " + String(e))); }

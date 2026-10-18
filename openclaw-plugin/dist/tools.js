@@ -6,7 +6,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { Engine } from "./engine.js";
 import { buildSessionDigest } from "./digest.js";
-export const VERSION = "4.6.8";
+export const VERSION = "4.6.9";
 export function createTools(dbPath) {
     const db = new DatabaseSync(dbPath);
     db.exec('PRAGMA journal_mode=WAL');
@@ -283,6 +283,14 @@ export function createTools(dbPath) {
         rules_remove: (id) => {
             db.prepare("UPDATE binding_rules SET active = 0, updated_at = datetime('now') WHERE id = ?").run(id);
             return { ok: true, id, deactivated: true };
+        },
+        rules_set_active: (id, active) => {
+            db.prepare("UPDATE binding_rules SET active = ?, updated_at = datetime('now') WHERE id = ?").run(active ? 1 : 0, id);
+            return { ok: true, id, active };
+        },
+        rules_delete: (id) => {
+            db.prepare("DELETE FROM binding_rules WHERE id = ?").run(id);
+            return { ok: true, id, deleted: true };
         },
         rules_list_all: () => {
             return q("SELECT id, rule_text, category, priority, active, created_at, updated_at FROM binding_rules ORDER BY priority ASC, id ASC");

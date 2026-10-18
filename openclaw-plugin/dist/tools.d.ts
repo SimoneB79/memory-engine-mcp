@@ -5,7 +5,7 @@
  */
 import { DatabaseSync } from "node:sqlite";
 import { Row } from "./engine.js";
-export declare const VERSION = "4.6.8";
+export declare const VERSION = "4.6.9";
 export declare function createTools(dbPath: string): {
     __db: DatabaseSync;
     version: () => {
@@ -115,6 +115,16 @@ export declare function createTools(dbPath: string): {
         ok: boolean;
         id: number;
         deactivated: boolean;
+    };
+    rules_set_active: (id: number, active: boolean) => {
+        ok: boolean;
+        id: number;
+        active: boolean;
+    };
+    rules_delete: (id: number) => {
+        ok: boolean;
+        id: number;
+        deleted: boolean;
     };
     rules_list_all: () => any[];
     _admin_note: () => string;

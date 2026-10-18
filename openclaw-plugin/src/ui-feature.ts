@@ -145,6 +145,16 @@ export function createFeatureHandlers() {
             x("INSERT INTO binding_rules (rule_text, category, priority) VALUES (?,?,?)", rule_text, category || 'general', priority || 5);
             return { ok: true, rule_text, category: category || 'general', priority: priority || 5 };
         },
+        rules_set_active: ({ id, active }: any) => {
+            db.exec("CREATE TABLE IF NOT EXISTS binding_rules (id INTEGER PRIMARY KEY AUTOINCREMENT, rule_text TEXT NOT NULL, category TEXT DEFAULT 'general', priority INTEGER DEFAULT 5, active INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))");
+            x("UPDATE binding_rules SET active = ?, updated_at = datetime('now') WHERE id = ?", active ? 1 : 0, id);
+            return { ok: true, id, active: !!active };
+        },
+        rules_delete: ({ id }: any) => {
+            db.exec("CREATE TABLE IF NOT EXISTS binding_rules (id INTEGER PRIMARY KEY AUTOINCREMENT, rule_text TEXT NOT NULL, category TEXT DEFAULT 'general', priority INTEGER DEFAULT 5, active INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))");
+            x("DELETE FROM binding_rules WHERE id = ?", id);
+            return { ok: true, id, deleted: true };
+        },
         rules_remove: ({ id }: any) => {
             x("UPDATE binding_rules SET active = 0, updated_at = datetime('now') WHERE id = ?", id);
             return { ok: true, id, deactivated: true };
