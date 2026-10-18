@@ -2,7 +2,7 @@
   "id": "memory-engine",
   "name": "Memory Engine",
   "description": "Native Memory Engine: 50 memory tools (binding rules!), session ingest/digest, curator and Control UI.",
-  "version": "4.6.9",
+  "version": "4.7.0",
   "configSchema": {
     "type": "object",
     "properties": {

@@ -10,6 +10,7 @@ import { buildAdminDefs } from "./admin.js";
 import { buildSemanticDefs } from "./semantic.js";
 import { buildMaintenanceDefs } from "./maintenance.js";
 import { buildSessionDigest } from "./digest.js";
+import { registerRulesHook } from "./hooks.js";
 import type { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
 
@@ -56,6 +57,8 @@ export default definePluginEntry({
     const ingestEnabled: boolean = ingestCfg.enabled === true;
     const retentionDays: number = Number(ingestCfg.retention_days ?? 7);
     const logger = (api as any).logger ?? console;
+    // ── Binding rules injection (v4.7.0): regole vincolanti nel contesto di ogni turno ──
+    registerRulesHook(api, me, logger);
 
     // ── Tools ─────────────────────────────────────────────
     const defs: Array<{ name: string; description: string; parameters: any; execute: (a: any) => any }> = [

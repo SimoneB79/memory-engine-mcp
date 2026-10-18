@@ -10,6 +10,7 @@ import { buildAdminDefs } from "./admin.js";
 import { buildSemanticDefs } from "./semantic.js";
 import { buildMaintenanceDefs } from "./maintenance.js";
 import { buildSessionDigest } from "./digest.js";
+import { registerRulesHook } from "./hooks.js";
 import { createHash } from "node:crypto";
 /** Il gateway puo' passare un tool-call id (stringa) come primo argomento:
  *  i params stanno in uno degli argomenti successivi, o in un envelope. */
@@ -51,6 +52,8 @@ export default definePluginEntry({
         const ingestEnabled = ingestCfg.enabled === true;
         const retentionDays = Number(ingestCfg.retention_days ?? 7);
         const logger = api.logger ?? console;
+        // ── Binding rules injection (v4.7.0): regole vincolanti nel contesto di ogni turno ──
+        registerRulesHook(api, me, logger);
         // ── Tools ─────────────────────────────────────────────
         const defs = [
             { name: "memory_version", description: "Memory Engine TS version.", parameters: T.Object({}), execute: () => me.version() },

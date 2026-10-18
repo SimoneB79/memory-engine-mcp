@@ -13,9 +13,9 @@ export declare function createFeatureHandlers(): {
         results: any[];
     };
     atom: ({ id }: any) => {
+        error: string;
         atom?: undefined;
         bonds?: undefined;
-        error: string;
     } | {
         error?: undefined;
         atom: any;
@@ -50,10 +50,10 @@ export declare function createFeatureHandlers(): {
         }[];
     };
     backup_now: () => {
-        reason?: undefined;
         ok: boolean;
         path: string;
         size_bytes: number;
+        reason?: undefined;
     } | {
         path?: undefined;
         size_bytes?: undefined;
