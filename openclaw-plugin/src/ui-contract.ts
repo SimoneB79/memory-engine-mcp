@@ -64,6 +64,21 @@ export const contract = defineFeatureContract({
       input: Type.Object({ id: Type.String({ maxLength: 200 }), new_domain: Type.String({ maxLength: 200 }) }, { additionalProperties: false }),
       output: Type.Object({}, { additionalProperties: true }),
     },
+    rules_list_all: {
+      kind: "query", description: "List all binding rules (active and inactive).",
+      input: Type.Object({}, { additionalProperties: false }),
+      output: Type.Object({}, { additionalProperties: true }),
+    },
+    rules_add: {
+      kind: "action", description: "Add a binding rule.",
+      input: Type.Object({ rule_text: Type.String({ maxLength: 500, minLength: 1 }), category: Type.Optional(Type.String({ maxLength: 40 })), priority: Type.Optional(Type.Integer({ minimum: 1, maximum: 10 })) }, { additionalProperties: false }),
+      output: Type.Object({}, { additionalProperties: true }),
+    },
+    rules_remove: {
+      kind: "action", description: "Deactivate a binding rule.",
+      input: Type.Object({ id: Type.Integer({ minimum: 1 }) }, { additionalProperties: false }),
+      output: Type.Object({}, { additionalProperties: true }),
+    },
     db_stats: {
       kind: "query", description: "Database management stats: counts by status, db file size, retention setting.",
       input: Type.Object({}, { additionalProperties: false }),
