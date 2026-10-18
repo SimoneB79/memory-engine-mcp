@@ -448,7 +448,8 @@ export default defineControlUiPlugin({
                 const loadRules = async () => {
                     rlList.innerHTML = "";
                     try {
-                        const all = await feature.invoke("rules_list_all", {});
+                        const res = await feature.invoke("rules_list_all", {});
+                        const all = Array.isArray(res) ? res : (res.rules ?? []);
                         rlCount.textContent = all.length + " regole totali · " + all.filter((r) => r.active).length + " attive";
                         if (!all.length) {
                             rlList.append(status("Nessuna regola. Agungine una sopra."));
