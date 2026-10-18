@@ -138,7 +138,7 @@ export function createFeatureHandlers() {
         // ── Binding Rules (v4.6.3): regole vincolanti ──
         rules_list_all: () => {
             db.exec("CREATE TABLE IF NOT EXISTS binding_rules (id INTEGER PRIMARY KEY AUTOINCREMENT, rule_text TEXT NOT NULL, category TEXT DEFAULT 'general', priority INTEGER DEFAULT 5, active INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))");
-            return q("SELECT id, rule_text, category, priority, active, created_at, updated_at FROM binding_rules ORDER BY priority ASC, id ASC");
+            return { rules: q("SELECT id, rule_text, category, priority, active, created_at, updated_at FROM binding_rules ORDER BY priority ASC, id ASC") };
         },
         rules_add: ({ rule_text, category, priority }: any) => {
             db.exec("CREATE TABLE IF NOT EXISTS binding_rules (id INTEGER PRIMARY KEY AUTOINCREMENT, rule_text TEXT NOT NULL, category TEXT DEFAULT 'general', priority INTEGER DEFAULT 5, active INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')))");
