@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 # ─── Version ────────────────────────────────────────────────
 
-__version__ = "2.1.0"
+__version__ = "2.2.0"
 
 from db import DB
 from engine import Engine
