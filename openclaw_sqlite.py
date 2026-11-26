@@ -18,7 +18,7 @@ try:
 except ImportError:
     _zstd = None
 
-SUPPORTED_SCHEMA_VERSIONS = {17, 19, 21, 23, 24, 25}
+SUPPORTED_SCHEMA_VERSIONS = {17, 19, 21, 23, 24, 25, 38, 39, 40, 41, 42}
 REQUIRED_TABLES = {
     "schema_meta",
     "session_transcript_active_events",

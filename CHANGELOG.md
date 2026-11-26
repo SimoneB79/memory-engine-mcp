@@ -34,6 +34,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Aggiunto test di regressione (contradict.test.ts) che verifica anche il mapping colonne.
 - devDeps: vitest ^3.3.0 non esiste su npm, corretto a ^3.2.4.
 
+## [2.3.0] — 2026-11-26
+
+### Added (MCP server)
+- **Supporto OpenClaw agent DB schema 38-42** (OpenClaw 2026.11.8-2026.11.10): aggiunte 38-42 a SUPPORTED_SCHEMA_VERSIONS in openclaw_sqlite.py. Le tabelle e le colonne baseline usate dal reader sono invariate; le novità delle generazioni 39-42 (cold transcript navigation, session creation receipts, active facts, tool usage) sono additive. Verificato scan read-only su DB reale schema 42 (157 batch, 3358 messaggi, archivi zstd OK) e suite completa (176 test passed).
+- Test di regressione parametrico per gli schema 38-42 in test_openclaw_sqlite.py.
+
 ## [2.2.0] — 2026-10-22
 
 ### Added (MCP server)

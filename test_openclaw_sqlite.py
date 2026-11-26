@@ -109,6 +109,17 @@ def test_schema_21_supported(tmp_path):
     assert isinstance(batches, list)
 
 
+@pytest.mark.parametrize("schema_version", [38, 39, 40, 41, 42])
+def test_schema_38_to_42_supported(tmp_path, schema_version):
+    path = tmp_path / "openclaw.sqlite"
+    conn = create_openclaw_db(path, schema_version=schema_version)
+    conn.commit()
+    conn.close()
+
+    batches = OpenClawSQLiteSource(str(path)).scan()
+    assert isinstance(batches, list)
+
+
 def test_schema_incompatibility_is_explicit(tmp_path):
     path = tmp_path / "openclaw.sqlite"
     conn = create_openclaw_db(path, schema_version=18)
